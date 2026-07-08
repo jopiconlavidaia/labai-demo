@@ -614,6 +614,14 @@
   .new-sample-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .new-sample-grid .full { grid-column: 1 / -1; }
   .field-note { font-size: 11px; color: var(--text-3); margin-top: 6px; line-height: 1.4; }
+  .field-note.new { color: var(--brand-700); }
+  .field-note.ok { color: var(--green); }
+
+  /* Especialidades editables (Configuración) */
+  .spec-chip-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+  .spec-chip { font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 99px; }
+  .spec-add-row { display: flex; gap: 8px; }
+  .spec-add-row .field-input { flex: 1; }
 
   /* Vista previa del código de caso en recepción */
   .code-preview {
@@ -691,6 +699,14 @@
   .client-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 16px 18px; transition: box-shadow 0.16s, transform 0.16s; }
   .client-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
   .cc-head { display: flex; align-items: center; gap: 11px; }
+  .cc-actions { display: flex; gap: 4px; margin-left: 6px; }
+  .icon-btn-sm {
+    width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--border-2);
+    background: var(--surface); color: var(--text-3); display: flex; align-items: center;
+    justify-content: center; transition: all 0.14s; flex-shrink: 0;
+  }
+  .icon-btn-sm:hover { color: var(--brand-700); border-color: var(--brand-500); background: var(--brand-50); }
+  .icon-btn-sm.danger:hover { color: var(--red); border-color: var(--red); background: var(--red-bg); }
   .cc-ico { width: 38px; height: 38px; border-radius: 10px; background: var(--brand-50); color: var(--brand-700); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .cc-ico svg { width: 19px; height: 19px; }
   .cc-name { font-size: 14.5px; font-weight: 700; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -807,22 +823,27 @@ const I = {
   micro:    <Ico d={<><path d="M6 18h8M3 22h18M14 22a7 7 0 100-14h-1M9 14h2M9 12a2 2 0 01-2-2V6a2 2 0 012-2 2 2 0 012 2v4a2 2 0 01-2 2z"/></>} size={15}/>,
 };
 
-/* ════════════════ DATA ════════════════ */
-const SPECIALTIES = {
-  'Dermatopatología':  { c:'derm', short:'Dermato' },
-  'Patología mamaria': { c:'mama', short:'Mama' },
-  'Ginecológica':      { c:'gine', short:'Gineco' },
-  'Digestiva':         { c:'dige', short:'Digestiva' },
+/* ════════════════ DATA ════════════════
+   Especialidades y clientes son EDITABLES por el laboratorio (viven en estado de
+   React + localStorage, no son constantes fijas). Estos son solo los valores
+   iniciales de la demo; BCN Patòlegs los sustituye por los suyos desde la propia app. */
+const DEFAULT_SPECIALTIES = {
+  'Dermatopatología':  { short:'Dermato',   bg:'#eaf1f5', fg:'#3f6f8c' },
+  'Patología mamaria': { short:'Mama',      bg:'#f2ecef', fg:'#8a5f74' },
+  'Ginecológica':      { short:'Gineco',    bg:'#e9f1ee', fg:'#3f7d6e' },
+  'Digestiva':         { short:'Digestiva', bg:'#f2eee5', fg:'#8c7444' },
 };
-// Paleta categórica apagada y coherente con la marca (sin colores estridentes).
-const specStyle = (s) => {
-  const m = {
-    derm:['#eaf1f5','#3f6f8c'], mama:['#f2ecef','#8a5f74'],
-    gine:['#e9f1ee','#3f7d6e'], dige:['#f2eee5','#8c7444'],
-    teal:['var(--brand-50)','var(--brand-700)'],
-  };
-  return m[SPECIALTIES[s]?.c] || m.teal;
+// Paleta rotativa apagada para especialidades nuevas que el laboratorio añada.
+const SPEC_PALETTE = [
+  ['#eaf1f5','#3f6f8c'], ['#f2ecef','#8a5f74'], ['#e9f1ee','#3f7d6e'], ['#f2eee5','#8c7444'],
+  ['#eceef2','#5f6b8a'], ['#f1eee9','#8a7256'], ['#e8f0f0','#4f7d7d'], ['#f0ecf1','#7a6a8c'],
+];
+const nextSpecColor = (specialties) => SPEC_PALETTE[Object.keys(specialties).length % SPEC_PALETTE.length];
+const specStyle = (specialties, s) => {
+  const sp = specialties?.[s];
+  return sp ? [sp.bg, sp.fg] : ['var(--brand-50)','var(--brand-700)'];
 };
+const specShort = (specialties, s) => specialties?.[s]?.short || s || '—';
 
 // Tipos de muestra a la entrada (codificación por letra del laboratorio).
 const TIPOS = {
@@ -832,8 +853,9 @@ const TIPOS = {
   G: { label:'Otro',           hint:'Otro tipo de muestra' },
 };
 
-// Clientes / mútuas — cada uno con su descuento y tarifas propias (lo pide dirección).
-const CLIENTS = [
+// Clientes / mútuas — cada uno con su descuento y tarifas propias. Valores de
+// demostración; el laboratorio los edita, añade o borra desde "Clientes y tarifas".
+const DEFAULT_CLIENTS = [
   { id:'mar',     name:'Hospital del Mar',            type:'Hospital',         discount:15, rate:{ B:82, C:48, P:65 } },
   { id:'santpau', name:'Hospital de Sant Pau',        type:'Hospital',         discount:18, rate:{ B:80, C:46, P:63 } },
   { id:'clinic',  name:'Hospital Clínic',             type:'Hospital',         discount:16, rate:{ B:81, C:47, P:64 } },
@@ -844,7 +866,22 @@ const CLIENTS = [
   { id:'gracia',  name:'CAP Gràcia',                  type:'Centro derivador', discount:5,  rate:{ B:98, C:58, P:72 } },
   { id:'digest',  name:'Consulta Dr. Sànchez',        type:'Centro derivador', discount:0,  rate:{ B:100, C:60, P:74 } },
 ];
-const clientById = (id) => CLIENTS.find(c=>c.id===id);
+const clientById = (clients, id) => clients.find(c=>c.id===id);
+const slugify = (name) => (name.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'cliente');
+const uid = (prefix) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
+
+// Persistencia sencilla en localStorage, con guarda ante datos corruptos o inexistentes.
+function loadStored(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch (e) { return fallback; }
+}
+function saveStored(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+}
 
 const STATES = {
   recibida:    { label:'Recepción',    color:'#8a98a8', dot:'#94a2b0' },
@@ -952,6 +989,12 @@ const REPORT_TEMPLATES = {
   'Ginecológica': ['Citología cervical — negativa','SIL de bajo grado (LSIL)','SIL de alto grado (HSIL)','Hiperplasia endometrial','Pólipo endometrial'],
   'Digestiva': ['Adenoma tubular','Adenocarcinoma de colon','Esófago de Barrett','Gastritis crónica H. pylori','Enfermedad celíaca'],
 };
+// Para especialidades nuevas que el laboratorio añada (sin plantillas predefinidas
+// todavía): orientaciones genéricas + preset de hallazgos neutro para no romper nada.
+const GENERIC_TEMPLATES = ['Hallazgos benignos','Hallazgos malignos','Proceso inflamatorio','Sin alteraciones significativas'];
+const GENERIC_PRESET = ['Fragmento de tejido remitido para estudio anatomopatológico.', 'Hallazgos morfológicos a describir por el patólogo.'];
+const templatesFor = (spec) => REPORT_TEMPLATES[spec] || GENERIC_TEMPLATES;
+const snomedFor = (spec) => SNOMED[spec] || { code:'—', t:'Sin codificar', topo:'—' };
 
 /* ── Modo demostración: IA simulada (sin clave) ── */
 const sleep = (ms) => new Promise(r=>setTimeout(r, ms));
@@ -979,13 +1022,14 @@ function simulateChatReply(q, samples) {
 }
 
 function simulateReport(sample, spec, template, macro, micro) {
-  const sn = SNOMED[spec];
+  const sn = snomedFor(spec);
   const grading = {
     'Dermatopatología':'Índice de Breslow y nivel de Clark según corresponda. Valorar márgenes de resección y biopsia de ganglio centinela si pT1b o superior.',
     'Patología mamaria':'Gradación histológica de Nottingham. Se recomienda completar con estudio inmunohistoquímico (RE, RP, HER2, Ki-67).',
     'Ginecológica':'Clasificación según sistema Bethesda. Correlación con genotipado de VPH de alto riesgo.',
     'Digestiva':'Grado de displasia (bajo/alto). Valorar márgenes de polipectomía y seguimiento endoscópico según protocolo.',
   };
+  const gradingText = grading[spec] || 'Correlacionar con la clínica y ampliar estudio si procede.';
   return `DATOS DE LA MUESTRA
 Referencia: ${sample.id}
 Paciente: ${sample.patient}, ${sample.age} años, ${sample.sex==='M'?'mujer':'hombre'}
@@ -1000,7 +1044,7 @@ DESCRIPCIÓN MICROSCÓPICA
 ${micro}
 
 DIAGNÓSTICO
-${template}. Los hallazgos morfológicos descritos son compatibles con el diagnóstico orientativo. ${grading[spec]}
+${template}. Los hallazgos morfológicos descritos son compatibles con el diagnóstico orientativo. ${gradingText}
 
 CODIFICACIÓN SNOMED CT
 Morfología: ${sn.code} — ${sn.t}
@@ -1061,6 +1105,11 @@ function App() {
   const apiKey = '';
   const [showGuide, setShowGuide] = useState(() => !localStorage.getItem('labai_onboarded'));
   const [samples, setSamples] = useState(INITIAL_SAMPLES);
+  // Especialidades y clientes/mútuas: editables por el laboratorio, persisten en este navegador.
+  const [specialties, setSpecialties] = useState(() => loadStored('labai_specialties', DEFAULT_SPECIALTIES));
+  const [clients, setClients] = useState(() => loadStored('labai_clients', DEFAULT_CLIENTS));
+  useEffect(() => { saveStored('labai_specialties', specialties); }, [specialties]);
+  useEffect(() => { saveStored('labai_clients', clients); }, [clients]);
   const [toast, setToast] = useState(null);
   const [search, setSearch] = useState('');
   const [pendingNewSample, setPendingNewSample] = useState(false);
@@ -1110,6 +1159,27 @@ function App() {
   const goNewSample = () => { setPendingNewSample(true); setView('samples'); };
   const submitSearch = (q) => { setSearch(q); setView('samples'); };
 
+  // Clientes/mútuas: alta, edición y baja. Cada laboratorio pone los suyos con
+  // el nombre y el descuento reales que tengan pactados — nada viene cerrado.
+  const addClient = (c) => {
+    setClients(prev => [...prev, { id: c.id || uid('cli'), rate:{ B:100, C:60, P:75 }, discount:0, type:'Cliente', ...c }]);
+  };
+  const updateClient = (id, patch) => {
+    setClients(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+  };
+  const deleteClient = (id) => {
+    if (samples.some(s => s.client === id)) { showToast('No se puede eliminar: tiene muestras vinculadas.'); return; }
+    setClients(prev => prev.filter(c => c.id !== id));
+  };
+
+  // Especialidades: alta libre (sin borrado, para no romper muestras que ya las usan).
+  const addSpecialty = (name, opts) => {
+    const clean = name.trim();
+    if (!clean || specialties[clean]) return;
+    const [bg, fg] = nextSpecColor(specialties);
+    setSpecialties(prev => ({ ...prev, [clean]: { short: (opts?.short || clean).slice(0,14), bg, fg } }));
+  };
+
   const titles = {
     dashboard: ['Panel general'],
     samples:   ['Muestras'],
@@ -1133,16 +1203,16 @@ function App() {
                 onToggleNav={() => setMobileNavOpen(v => !v)} />
         <div className="content">
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
-            {view === 'dashboard' && <Dashboard samples={samples} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
+            {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
-            {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} showToast={showToast} initialSampleId={reportSampleId} />}
+            {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
-            {view === 'clients'   && <Clients samples={samples} onOpenSamples={()=>setView('samples')} />}
-            {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} onOpenReport={openReportFor} />}
+            {view === 'clients'   && <Clients samples={samples} clients={clients} addClient={addClient} updateClient={updateClient} deleteClient={deleteClient} onOpenSamples={()=>setView('samples')} />}
+            {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
-            {view === 'team'      && <Team />}
-            {view === 'settings'  && <Settings aiLive={aiLive} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
+            {view === 'team'      && <Team specialties={specialties} />}
+            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
       </div>
@@ -1287,15 +1357,15 @@ function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSe
 }
 
 /* ════════════════ DASHBOARD ════════════════ */
-function Dashboard({ samples, setView, onNewSample }) {
+function Dashboard({ samples, specialties, setView, onNewSample }) {
   const total = samples.length;
   const urgent = samples.filter(s=>s.urgent && s.state!=='validado').length;
   const inProc = samples.filter(s=>['tallado','procesando','diagnostico'].includes(s.state)).length;
   const validated = samples.filter(s=>s.state==='validado').length;
 
-  const bySpec = Object.keys(SPECIALTIES).map(sp => ({
-    name: sp, count: samples.filter(s=>s.spec===sp).length, c: specStyle(sp)[1]
-  }));
+  const bySpec = Object.keys(specialties).map(sp => ({
+    name: sp, count: samples.filter(s=>s.spec===sp).length, c: specStyle(specialties, sp)[1]
+  })).filter(s=>s.count>0);
   const totalSpec = bySpec.reduce((a,b)=>a+b.count,0) || 1;
 
   // donut
@@ -1418,7 +1488,7 @@ function Dashboard({ samples, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
   const [mode, setMode] = useState('kanban');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -1429,7 +1499,7 @@ function Samples({ samples, addSample, updateState, updateSample, search, setSea
   const q = (search||'').trim().toLowerCase();
   const filtered = samples.filter(s=>{
     if (filter!=='all' && s.spec!==filter) return false;
-    const client = clientById(s.client)?.name || '';
+    const client = clientById(clients, s.client)?.name || '';
     if (q && !(`${s.id} ${s.caseCode||''} ${s.patient} ${s.type} ${s.ref} ${s.tech} ${client} ${s.notes||''}`.toLowerCase().includes(q))) return false;
     return true;
   });
@@ -1455,8 +1525,8 @@ function Samples({ samples, addSample, updateState, updateSample, search, setSea
           </div>
           <div style={{display:'flex',gap:6,marginLeft:14,flexWrap:'wrap'}}>
             <button className={`btn btn-sm ${filter==='all'?'btn-soft':'btn-ghost'}`} onClick={()=>setFilter('all')}>Todas</button>
-            {Object.keys(SPECIALTIES).map(sp=>(
-              <button key={sp} className={`btn btn-sm ${filter===sp?'btn-soft':'btn-ghost'}`} onClick={()=>setFilter(sp)}>{SPECIALTIES[sp].short}</button>
+            {Object.keys(specialties).map(sp=>(
+              <button key={sp} className={`btn btn-sm ${filter===sp?'btn-soft':'btn-ghost'}`} onClick={()=>setFilter(sp)}>{specialties[sp].short}</button>
             ))}
           </div>
           {q && <span className="search-chip" style={{marginLeft:'auto'}}>{I.search} “{search}” <button onClick={()=>setSearch('')}>×</button></span>}
@@ -1476,7 +1546,7 @@ function Samples({ samples, addSample, updateState, updateSample, search, setSea
                 </div>
                 <div className="kcol-body">
                   {items.map(s=>{
-                    const [bg,fg] = specStyle(s.spec);
+                    const [bg,fg] = specStyle(specialties, s.spec);
                     return (
                       <div className="scard" key={s.id} onClick={()=>setSelected(s)}>
                         <div className="scard-top">
@@ -1485,10 +1555,10 @@ function Samples({ samples, addSample, updateState, updateSample, search, setSea
                         </div>
                         <div className="scard-name">{s.type}</div>
                         <div className="scard-patient">{GL.user} {s.patient} · {s.age}a</div>
-                        <div className="scard-client">{clientById(s.client)?.name || s.ref}</div>
+                        <div className="scard-client">{clientById(clients, s.client)?.name || s.ref}</div>
                         <div className="scard-foot">
                           <span className="tipo-tag">{s.tipo}</span>
-                          <span className="spec-pill" style={{background:bg,color:fg}}>{SPECIALTIES[s.spec].short}</span>
+                          <span className="spec-pill" style={{background:bg,color:fg}}>{specShort(specialties, s.spec)}</span>
                           <span className="scard-date">{s.received.split(' ')[0]}</span>
                         </div>
                       </div>
@@ -1509,15 +1579,15 @@ function Samples({ samples, addSample, updateState, updateSample, search, setSea
               </tr></thead>
               <tbody>
                 {filtered.map(s=>{
-                  const [sbg,sfg]=stateBg[s.state]; const [bg,fg]=specStyle(s.spec);
+                  const [sbg,sfg]=stateBg[s.state]; const [bg,fg]=specStyle(specialties, s.spec);
                   return (
                     <tr key={s.id} onClick={()=>setSelected(s)}>
                       <td><span className="mono">{s.caseCode}</span>{s.urgent && <span className="scard-urgent" style={{marginLeft:8}}>URG</span>}</td>
                       <td><span className="tipo-tag" title={TIPOS[s.tipo]?.label}>{s.tipo}</span></td>
                       <td style={{fontWeight:600,maxWidth:230}}>{s.type}{s.pots>1?<span style={{color:'var(--text-3)',fontWeight:500}}> · {s.pots} botes</span>:null}</td>
                       <td>{s.patient} <span style={{color:'var(--text-3)'}}>· {s.age}a {s.sex}</span></td>
-                      <td style={{color:'var(--text-2)'}}>{clientById(s.client)?.name || s.ref}</td>
-                      <td><span className="spec-pill" style={{background:bg,color:fg}}>{SPECIALTIES[s.spec].short}</span></td>
+                      <td style={{color:'var(--text-2)'}}>{clientById(clients, s.client)?.name || s.ref}</td>
+                      <td><span className="spec-pill" style={{background:bg,color:fg}}>{specShort(specialties, s.spec)}</span></td>
                       <td><span className="status-pill" style={{background:sbg,color:sfg}}><span className="sp-dot" style={{background:sfg}}></span>{STATES[s.state].label}</span></td>
                       <td style={{color:'var(--text-3)',fontSize:12}}>{s.received}</td>
                     </tr>
@@ -1533,18 +1603,18 @@ function Samples({ samples, addSample, updateState, updateSample, search, setSea
         <div className="card"><div className="empty"><div className="empty-ico">{I.search}</div><h3>Sin resultados</h3><p>No hay muestras que coincidan con los filtros o la búsqueda actual.</p>{q && <button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>Limpiar búsqueda</button>}</div></div>
       )}
 
-      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} setSelected={setSelected} onOpenReport={onOpenReport} />}
-      {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} />}
+      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} setSelected={setSelected} onOpenReport={onOpenReport} />}
+      {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} />}
     </div>
   );
 }
 
-function SampleDrawer({ sample, onClose, updateState, updateSample, setSelected, onOpenReport }) {
+function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, setSelected, onOpenReport }) {
   const s = sample;
-  const [bg,fg] = specStyle(s.spec);
+  const [bg,fg] = specStyle(specialties, s.spec);
   const trace = TRACE(s);
-  const sn = SNOMED[s.spec];
-  const client = clientById(s.client);
+  const sn = snomedFor(s.spec);
+  const client = clientById(clients, s.client);
   const letters = potLetters(s.pots || 1);
   const order = ['recibida','tallado','procesando','diagnostico','validado'];
   const nextState = order[Math.min(order.indexOf(s.state)+1, order.length-1)];
@@ -1649,12 +1719,14 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, setSelected,
   );
 }
 
-function NewSampleModal({ onClose, onAdd }) {
-  const [f, setF] = useState({ type:'', patient:'', age:'', sex:'M', client:CLIENTS[0].id, ref:'', tipo:'B', pots:1, spec:'Dermatopatología', urgent:false });
+function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSpecialty }) {
+  const [f, setF] = useState({ type:'', patient:'', age:'', sex:'M', clientName:clients[0]?.name||'', ref:'', tipo:'B', pots:1, spec:Object.keys(specialties)[0]||'', urgent:false });
   const set = (k,v) => setF(p=>({...p,[k]:v}));
-  const valid = f.type.trim() && f.patient.trim() && f.age && f.client;
+  const valid = f.type.trim() && f.patient.trim() && f.age && f.clientName.trim() && f.spec.trim();
 
-  const client = clientById(f.client);
+  const matchedClient = clients.find(c => c.name.trim().toLowerCase() === f.clientName.trim().toLowerCase());
+  const isNewClient = f.clientName.trim() && !matchedClient;
+  const isNewSpec = f.spec.trim() && !specialties[f.spec.trim()];
   const previewCode = `25${f.tipo}${CASE_SEQ}`;
   const letters = potLetters(f.pots);
 
@@ -1663,10 +1735,21 @@ function NewSampleModal({ onClose, onAdd }) {
     const now = new Date();
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
     const caseNo = CASE_SEQ++;
+
+    // Cliente y especialidad son campos abiertos: si lo escrito no existe todavía
+    // en el CRM del laboratorio, se da de alta aquí mismo con este registro.
+    let clientId = matchedClient?.id;
+    if (!clientId) {
+      clientId = uid('cli');
+      addClient({ id: clientId, name: f.clientName.trim(), type:'Cliente', discount:0, rate:{ B:100, C:60, P:75 } });
+    }
+    const specName = f.spec.trim();
+    if (!specialties[specName]) addSpecialty(specName);
+
     const ns = mkSample({
-      n: ++SID, caseNo, tipo:f.tipo, client:f.client, pots:Number(f.pots)||1,
+      n: ++SID, caseNo, tipo:f.tipo, client:clientId, pots:Number(f.pots)||1,
       type:f.type.trim(), patient:f.patient.trim(), age:Number(f.age), sex:f.sex,
-      ref:f.ref.trim()||client?.name||'—', spec:f.spec, tech: PATHOLOGISTS.find(p=>p.spec===f.spec)?.name || 'Por asignar',
+      ref:f.ref.trim()||matchedClient?.name||f.clientName.trim(), spec:specName, tech: PATHOLOGISTS.find(p=>p.spec===specName)?.name || 'Por asignar',
       state:'recibida', urgent:f.urgent, received:`28/06 ${hh}:${mm}`, blocks:0, slides:0
     });
     onAdd(ns);
@@ -1695,9 +1778,10 @@ function NewSampleModal({ onClose, onAdd }) {
           <div className="new-sample-grid">
             <div className="field full">
               <label className="field-label">Cliente / mútua *</label>
-              <select className="field-input" value={f.client} onChange={e=>set('client',e.target.value)}>
-                {CLIENTS.map(c=><option key={c.id} value={c.id}>{c.name} · {c.type}{c.discount>0?` (dto. ${c.discount}%)`:''}</option>)}
-              </select>
+              <input className="field-input" list="clients-dl" placeholder="Escribe o elige un hospital, clínica o mútua…" value={f.clientName} onChange={e=>set('clientName',e.target.value)}/>
+              <datalist id="clients-dl">{clients.map(c=><option key={c.id} value={c.name}/>)}</datalist>
+              {matchedClient && matchedClient.discount>0 && <div className="field-note ok">Cliente existente · descuento {matchedClient.discount}% ya aplicado.</div>}
+              {isNewClient && <div className="field-note new">Es un cliente nuevo: se dará de alta con este registro (sin descuento; edítalo luego en «Clientes y tarifas»).</div>}
             </div>
 
             <div className="field full">
@@ -1719,9 +1803,9 @@ function NewSampleModal({ onClose, onAdd }) {
             </div>
             <div className="field">
               <label className="field-label">Especialidad</label>
-              <select className="field-input" value={f.spec} onChange={e=>set('spec',e.target.value)}>
-                {Object.keys(SPECIALTIES).map(sp=><option key={sp}>{sp}</option>)}
-              </select>
+              <input className="field-input" list="specs-dl" placeholder="Escribe o elige una especialidad…" value={f.spec} onChange={e=>set('spec',e.target.value)}/>
+              <datalist id="specs-dl">{Object.keys(specialties).map(sp=><option key={sp} value={sp}/>)}</datalist>
+              {isNewSpec && <div className="field-note new">Especialidad nueva: se añadirá al laboratorio.</div>}
             </div>
 
             <div className="field full">
@@ -1921,7 +2005,7 @@ function FormatText({ text }) {
 }
 
 /* ════════════════ REPORTS ════════════════ */
-function Reports({ apiKey, aiLive, onAiResult, samples, showToast, initialSampleId }) {
+function Reports({ apiKey, aiLive, onAiResult, samples, specialties, showToast, initialSampleId }) {
   const validatable = samples;
   const [sampleId, setSampleId] = useState(initialSampleId || samples.find(s=>s.state==='diagnostico')?.id || samples[0]?.id);
   // Si se llega aquí pulsando "Informe" desde otra muestra (con la vista de Informes
@@ -1931,8 +2015,8 @@ function Reports({ apiKey, aiLive, onAiResult, samples, showToast, initialSample
     if (initialSampleId) setSampleId(initialSampleId);
   }, [initialSampleId]);
   const sample = samples.find(s=>s.id===sampleId) || samples[0];
-  const [spec, setSpec] = useState(sample?.spec || 'Dermatopatología');
-  const [template, setTemplate] = useState(REPORT_TEMPLATES[sample?.spec||'Dermatopatología'][0]);
+  const [spec, setSpec] = useState(sample?.spec || Object.keys(specialties)[0]);
+  const [template, setTemplate] = useState(templatesFor(sample?.spec)[0]);
   const [macro, setMacro] = useState('');
   const [micro, setMicro] = useState('');
   const [report, setReport] = useState('');
@@ -1941,7 +2025,7 @@ function Reports({ apiKey, aiLive, onAiResult, samples, showToast, initialSample
   useEffect(()=>{
     if (sample) {
       setSpec(sample.spec);
-      setTemplate(REPORT_TEMPLATES[sample.spec][0]);
+      setTemplate(templatesFor(sample.spec)[0]);
       // prefill realistic clinical text by specialty
       const presets = {
         'Dermatopatología': ['Fragmento cutáneo de 0,8 x 0,6 cm con lesión pigmentada central de bordes irregulares.', 'Proliferación melanocítica atípica de disposición lentiginosa y nidos irregulares en unión dermoepidérmica. Pleomorfismo nuclear moderado. Se observan mitosis dérmicas. Índice de Breslow 1,2 mm.'],
@@ -1949,7 +2033,8 @@ function Reports({ apiKey, aiLive, onAiResult, samples, showToast, initialSample
         'Ginecológica': ['Extensión cérvico-vaginal. Material celular representativo, fijación adecuada.', 'Células escamosas con relación núcleo/citoplasma aumentada, hipercromasia y halos perinucleares (coilocitos). Cambios sugestivos de lesión intraepitelial de bajo grado (LSIL).'],
         'Digestiva': ['Tres fragmentos de mucosa colónica, el mayor de 0,4 cm.', 'Mucosa colónica con arquitectura glandular tubular y displasia epitelial de bajo grado. No se observa invasión de la muscularis mucosae. Sin signos de malignidad.'],
       };
-      setMacro(presets[sample.spec][0]); setMicro(presets[sample.spec][1]);
+      const preset = presets[sample.spec] || GENERIC_PRESET;
+      setMacro(preset[0]); setMicro(preset[1]);
       setReport('');
     }
   }, [sampleId]);
@@ -1963,7 +2048,7 @@ function Reports({ apiKey, aiLive, onAiResult, samples, showToast, initialSample
       setGen(false);
       return;
     }
-    const sn = SNOMED[spec];
+    const sn = snomedFor(spec);
     const prompt = `Redacta un INFORME ANATOMOPATOLÓGICO profesional y completo en español, listo para validar, con esta estructura exacta usando los encabezados en MAYÚSCULAS:
 
 DATOS DE LA MUESTRA
@@ -2022,15 +2107,14 @@ Usa terminología anatomopatológica rigurosa. En DIAGNÓSTICO sé conciso y cat
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             <div className="field">
               <label className="field-label">Especialidad</label>
-              <select className="field-input" value={spec} onChange={e=>{setSpec(e.target.value); setTemplate(REPORT_TEMPLATES[e.target.value][0]);}}>
-                {Object.keys(SPECIALTIES).map(sp=><option key={sp}>{sp}</option>)}
+              <select className="field-input" value={spec} onChange={e=>{setSpec(e.target.value); setTemplate(templatesFor(e.target.value)[0]);}}>
+                {Object.keys(specialties).map(sp=><option key={sp}>{sp}</option>)}
               </select>
             </div>
             <div className="field">
               <label className="field-label">Orientación diagnóstica</label>
-              <select className="field-input" value={template} onChange={e=>setTemplate(e.target.value)}>
-                {REPORT_TEMPLATES[spec].map(t=><option key={t}>{t}</option>)}
-              </select>
+              <input className="field-input" list="templates-dl" placeholder="Escribe el diagnóstico orientativo…" value={template} onChange={e=>setTemplate(e.target.value)}/>
+              <datalist id="templates-dl">{templatesFor(spec).map(t=><option key={t} value={t}/>)}</datalist>
             </div>
           </div>
           <div className="field">
@@ -2194,12 +2278,12 @@ function Quality({ samples, showToast }) {
 }
 
 /* ════════════════ ARCHIVO ════════════════ */
-function Archive({ samples, updateState, onOpenReport }) {
+function Archive({ samples, updateState, updateSample, clients, specialties, onOpenReport }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const validated = samples.filter(s=>s.state==='validado');
   const q = search.trim().toLowerCase();
-  const list = q ? validated.filter(s=>`${s.id} ${s.patient} ${s.type} ${s.spec} ${s.notes||''}`.toLowerCase().includes(q)) : validated;
+  const list = q ? validated.filter(s=>`${s.id} ${s.caseCode||''} ${s.patient} ${s.type} ${s.spec} ${clientById(clients,s.client)?.name||''} ${s.notes||''}`.toLowerCase().includes(q)) : validated;
   return (
     <div>
       <div className="page-head">
@@ -2219,14 +2303,15 @@ function Archive({ samples, updateState, onOpenReport }) {
         ) : (
           <div className="tbl-wrap">
             <table className="tbl">
-              <thead><tr><th>Referencia</th><th>Tipo de muestra</th><th>Paciente</th><th>Especialidad</th><th>Patólogo</th><th>Recepción</th><th></th></tr></thead>
+              <thead><tr><th>Referencia</th><th>Tipo de muestra</th><th>Paciente</th><th>Cliente / mútua</th><th>Especialidad</th><th>Patólogo</th><th>Recepción</th><th></th></tr></thead>
               <tbody>
-                {list.map(s=>{ const [bg,fg]=specStyle(s.spec); return (
+                {list.map(s=>{ const [bg,fg]=specStyle(specialties, s.spec); return (
                   <tr key={s.id} onClick={()=>setSelected(s)}>
-                    <td><span className="mono">{s.id}</span></td>
+                    <td><span className="mono">{s.caseCode||s.id}</span></td>
                     <td style={{fontWeight:600,maxWidth:240}}>{s.type}</td>
                     <td>{s.patient}</td>
-                    <td><span className="spec-pill" style={{background:bg,color:fg}}>{SPECIALTIES[s.spec].short}</span></td>
+                    <td style={{color:'var(--text-2)'}}>{clientById(clients,s.client)?.name || s.ref}</td>
+                    <td><span className="spec-pill" style={{background:bg,color:fg}}>{specShort(specialties, s.spec)}</span></td>
                     <td style={{color:'var(--text-2)'}}>{s.tech}</td>
                     <td style={{color:'var(--text-3)',fontSize:12}}>{s.received}</td>
                     <td><button className="btn btn-ghost btn-sm" onClick={e=>{e.stopPropagation(); onOpenReport(s.id);}}>{I.doc} Informe</button></td>
@@ -2237,7 +2322,7 @@ function Archive({ samples, updateState, onOpenReport }) {
           </div>
         )}
       </div>
-      {selected && <SampleDrawer sample={selected} onClose={()=>setSelected(null)} updateState={updateState} setSelected={setSelected} onOpenReport={onOpenReport} />}
+      {selected && <SampleDrawer sample={selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} setSelected={setSelected} onOpenReport={onOpenReport} />}
     </div>
   );
 }
@@ -2270,7 +2355,7 @@ function Analyze() {
       tipoDoc: a.tipo,
       diagnostico: a.diag,
       riesgo: a.riesgo,
-      snomed: SNOMED[doc.spec],
+      snomed: snomedFor(doc.spec),
       claves:['Confirmar márgenes de resección','Valorar técnicas complementarias (IHQ)','Correlación clínica recomendada'],
     });
     setBusy(false);
@@ -2323,8 +2408,10 @@ function Analyze() {
 }
 
 /* ════════════════ CLIENTES Y TARIFAS ════════════════ */
-function Clients({ samples, onOpenSamples }) {
-  const rows = CLIENTS.map(c => {
+function Clients({ samples, clients, addClient, updateClient, deleteClient, onOpenSamples }) {
+  const [modal, setModal] = useState(null); // null | 'new' | client object a editar
+
+  const rows = clients.map(c => {
     const list = samples.filter(s => s.client === c.id);
     const byType = { B:0, C:0, P:0, G:0 };
     list.forEach(s => { byType[s.tipo] = (byType[s.tipo]||0) + 1; });
@@ -2333,20 +2420,27 @@ function Clients({ samples, onOpenSamples }) {
 
   const totalMuestras = rows.reduce((a,b)=>a+b.count,0);
   const activos = rows.filter(r=>r.count>0).length;
-  const avgDto = Math.round(rows.reduce((a,b)=>a+b.discount,0)/rows.length);
+  const avgDto = rows.length ? Math.round(rows.reduce((a,b)=>a+b.discount,0)/rows.length) : 0;
   const stats = [
-    { label:'Clientes registrados', num:CLIENTS.length },
+    { label:'Clientes registrados', num:clients.length },
     { label:'Con muestras activas', num:activos },
     { label:'Muestras vinculadas',  num:totalMuestras },
     { label:'Descuento medio',       num:avgDto+'%' },
   ];
+
+  const remove = (c) => {
+    if (window.confirm(`¿Eliminar «${c.name}» de la lista de clientes?`)) deleteClient(c.id);
+  };
 
   return (
     <div>
       <div className="page-head">
         <div>
           <h1>Clientes y tarifas</h1>
-          <p>Condiciones diferenciadas por cliente · descuentos y tarifas por tipo de muestra</p>
+          <p>Condiciones diferenciadas por cliente · descuentos y tarifas por tipo de muestra, editables por el propio laboratorio</p>
+        </div>
+        <div className="page-head-actions">
+          <button className="btn btn-primary" onClick={()=>setModal('new')}>{I.plus} Nuevo cliente</button>
         </div>
       </div>
 
@@ -2359,6 +2453,10 @@ function Clients({ samples, onOpenSamples }) {
         ))}
       </div>
 
+      {rows.length===0 && (
+        <div className="card"><div className="empty"><div className="empty-ico">{GL.building}</div><h3>Sin clientes todavía</h3><p>Añade el primer hospital, clínica o mútua con «Nuevo cliente».</p></div></div>
+      )}
+
       <div className="client-grid">
         {rows.map(c=>(
           <div className="client-card" key={c.id}>
@@ -2369,6 +2467,10 @@ function Clients({ samples, onOpenSamples }) {
                 <div className="cc-type">{c.type}</div>
               </div>
               <span className={`cc-dto${c.discount===0?' zero':''}`}>{c.discount>0?`−${c.discount}%`:'Sin dto.'}</span>
+              <div className="cc-actions">
+                <button className="icon-btn-sm" title="Editar cliente" aria-label={`Editar ${c.name}`} onClick={()=>setModal(c)}><Ico d={<><path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></>} size={14}/></button>
+                <button className="icon-btn-sm danger" title="Eliminar cliente" aria-label={`Eliminar ${c.name}`} onClick={()=>remove(c)}><Ico d={<><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></>} size={14}/></button>
+              </div>
             </div>
 
             <div className="cc-vol">
@@ -2383,7 +2485,7 @@ function Clients({ samples, onOpenSamples }) {
               <div className="cc-rates-head">Tarifa por muestra</div>
               <div className="cc-rate-row">
                 {['B','C','P'].map(t=>{
-                  const base = c.rate[t];
+                  const base = c.rate?.[t] ?? 0;
                   const net = Math.round(base*(1-c.discount/100));
                   return (
                     <div className="cc-rate" key={t}>
@@ -2401,17 +2503,101 @@ function Clients({ samples, onOpenSamples }) {
       <div className="card" style={{marginTop:16}}>
         <div className="card-head"><h3>Cómo se aplica</h3></div>
         <div style={{padding:'14px 18px',fontSize:13,color:'var(--text-2)',lineHeight:1.6}}>
-          Al registrar una muestra en <button className="link-btn" onClick={onOpenSamples}>Recepción</button> se elige el cliente,
-          y el sistema aplica automáticamente su <strong>descuento</strong> y su <strong>tarifa por tipo de muestra</strong>.
+          Al registrar una muestra en <button className="link-btn" onClick={onOpenSamples}>Recepción</button> se escribe el cliente
+          (o se elige uno existente), y el sistema aplica automáticamente su <strong>descuento</strong> y su <strong>tarifa por tipo de muestra</strong>.
+          Aquí puedes dar de alta, editar o eliminar cualquier cliente, con los datos reales del despacho.
           Así dirección puede diferenciar condiciones cliente por cliente para facturación y estadística.
         </div>
       </div>
+
+      {modal && (
+        <ClientModal
+          client={modal==='new' ? null : modal}
+          onClose={()=>setModal(null)}
+          onSave={(data)=>{
+            if (modal==='new') addClient(data); else updateClient(modal.id, data);
+            setModal(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
+const CLIENT_TYPE_SUGGESTIONS = ['Hospital', 'Clínica privada', 'Centro derivador', 'Mútua', 'Aseguradora', 'Particular'];
+
+function ClientModal({ client, onClose, onSave }) {
+  const [f, setF] = useState(() => ({
+    name: client?.name || '',
+    type: client?.type || '',
+    discount: client?.discount ?? 0,
+    rateB: client?.rate?.B ?? 100,
+    rateC: client?.rate?.C ?? 60,
+    rateP: client?.rate?.P ?? 75,
+  }));
+  const set = (k,v) => setF(p=>({...p,[k]:v}));
+  const valid = f.name.trim().length > 0;
+
+  const submit = () => {
+    if (!valid) return;
+    onSave({
+      name: f.name.trim(),
+      type: f.type.trim() || 'Cliente',
+      discount: Math.max(0, Math.min(100, Number(f.discount)||0)),
+      rate: { B: Number(f.rateB)||0, C: Number(f.rateC)||0, P: Number(f.rateP)||0 },
+    });
+  };
+
+  return (
+    <Portal>
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{width:520}}>
+        <div className="modal-head">
+          <h3>{I.plus} {client ? 'Editar cliente' : 'Nuevo cliente'}</h3>
+          <p>Pon el nombre, el tipo y las condiciones reales que tengáis pactadas con este cliente.</p>
+        </div>
+        <div className="modal-body">
+          <div className="new-sample-grid">
+            <div className="field full">
+              <label className="field-label">Nombre *</label>
+              <input className="field-input" placeholder="p. ej. Hospital de Bellvitge" value={f.name} onChange={e=>set('name',e.target.value)} autoFocus/>
+            </div>
+            <div className="field full">
+              <label className="field-label">Tipo</label>
+              <input className="field-input" list="client-type-dl" placeholder="Hospital, clínica privada, mútua…" value={f.type} onChange={e=>set('type',e.target.value)}/>
+              <datalist id="client-type-dl">{CLIENT_TYPE_SUGGESTIONS.map(t=><option key={t} value={t}/>)}</datalist>
+            </div>
+            <div className="field">
+              <label className="field-label">Descuento (%)</label>
+              <input className="field-input" type="number" min="0" max="100" value={f.discount} onChange={e=>set('discount',e.target.value)}/>
+            </div>
+            <div className="field"></div>
+            <div className="field">
+              <label className="field-label">Tarifa Biopsia (€)</label>
+              <input className="field-input" type="number" min="0" value={f.rateB} onChange={e=>set('rateB',e.target.value)}/>
+            </div>
+            <div className="field">
+              <label className="field-label">Tarifa Citología (€)</label>
+              <input className="field-input" type="number" min="0" value={f.rateC} onChange={e=>set('rateC',e.target.value)}/>
+            </div>
+            <div className="field full">
+              <label className="field-label">Tarifa Punción · PAAF (€)</label>
+              <input className="field-input" type="number" min="0" value={f.rateP} onChange={e=>set('rateP',e.target.value)}/>
+            </div>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!valid}>{client ? 'Guardar cambios' : 'Crear cliente'}</button>
+        </div>
+      </div>
+    </div>
+    </Portal>
+  );
+}
+
 /* ════════════════ EQUIPO ════════════════ */
-function Team() {
+function Team({ specialties }) {
   return (
     <div>
       <div className="page-head">
@@ -2428,7 +2614,7 @@ function Team() {
                 <div className="team-role">Anatomía Patológica · {p.spec}</div>
                 <div className="team-stats">
                   <div className="team-stat"><div className="ts-num">{p.count}</div><div className="ts-lab">Casos hoy</div></div>
-                  <div className="team-stat"><div className="ts-num" style={{color:p.color}}>{SPECIALTIES[p.spec].short}</div><div className="ts-lab">Especialidad</div></div>
+                  <div className="team-stat"><div className="ts-num" style={{color:p.color}}>{specShort(specialties, p.spec)}</div><div className="ts-lab">Especialidad</div></div>
                 </div>
                 <div className="team-contact">✉ {slug}@bcnpatolegs.com</div>
               </div>
@@ -2449,7 +2635,17 @@ function Team() {
 }
 
 /* ════════════════ CONFIGURACIÓN ════════════════ */
-function Settings({ aiLive, onShowGuide, onReset, showToast }) {
+function Settings({ aiLive, specialties, addSpecialty, onShowGuide, onReset, showToast }) {
+  const [newSpec, setNewSpec] = useState('');
+  const addNewSpec = () => {
+    const name = newSpec.trim();
+    if (!name) return;
+    if (specialties[name]) { showToast && showToast('Esa especialidad ya existe'); return; }
+    addSpecialty(name);
+    setNewSpec('');
+    showToast && showToast(`Especialidad «${name}» añadida`);
+  };
+
   return (
     <div>
       <div className="page-head">
@@ -2475,8 +2671,25 @@ function Settings({ aiLive, onShowGuide, onReset, showToast }) {
           <div className="card-head"><h3>Datos del laboratorio</h3></div>
           <div className="set-row"><div className="set-info"><div className="set-title">Centro</div><div className="set-desc">BCN Patòlegs · Laboratori d'Anatomia Patològica</div></div></div>
           <div className="set-row"><div className="set-info"><div className="set-title">Dirección</div><div className="set-desc">Pg. de Josep Llovera, 9 · 08021 Barcelona</div></div></div>
-          <div className="set-row"><div className="set-info"><div className="set-title">Especialidades</div><div className="set-desc">Dermatopatología · Mamaria · Ginecológica · Digestiva</div></div></div>
           <div className="set-row"><div className="set-info"><div className="set-title">Alojamiento de datos</div><div className="set-desc">On-premise · servidor del laboratorio (Barcelona)</div></div><span className="audit-tag" style={{background:'var(--green-bg)',color:'var(--green)'}}>✓ RGPD</span></div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><h3>Especialidades</h3></div>
+          <div style={{padding:'14px 18px'}}>
+            <div className="spec-chip-row">
+              {Object.keys(specialties).map(sp=>{
+                const [bg,fg] = specStyle(specialties, sp);
+                return <span key={sp} className="spec-chip" style={{background:bg,color:fg}} title={sp}>{specialties[sp].short}</span>;
+              })}
+              {Object.keys(specialties).length===0 && <span style={{fontSize:12.5,color:'var(--text-3)'}}>Sin especialidades todavía.</span>}
+            </div>
+            <div className="spec-add-row">
+              <input className="field-input" placeholder="Nueva especialidad (p. ej. Neuropatología)" value={newSpec} onChange={e=>setNewSpec(e.target.value)} onKeyDown={e=>e.key==='Enter' && addNewSpec()}/>
+              <button className="btn btn-soft btn-sm" onClick={addNewSpec} disabled={!newSpec.trim()}>Añadir</button>
+            </div>
+            <div className="field-note">También puedes añadir una especialidad nueva directamente al registrar una muestra, en Recepción.</div>
+          </div>
         </div>
 
         <div className="card">
@@ -2486,7 +2699,7 @@ function Settings({ aiLive, onShowGuide, onReset, showToast }) {
             <button className="btn btn-soft btn-sm" onClick={onShowGuide}>Ver guía</button>
           </div>
           <div className="set-row">
-            <div className="set-info"><div className="set-title">Restablecer datos de demostración</div><div className="set-desc">Devuelve las muestras de ejemplo a su estado original.</div></div>
+            <div className="set-info"><div className="set-title">Restablecer datos de demostración</div><div className="set-desc">Devuelve las muestras, clientes y especialidades a su estado original de ejemplo.</div></div>
             <button className="btn btn-ghost btn-sm" onClick={onReset}>Restablecer</button>
           </div>
         </div>
