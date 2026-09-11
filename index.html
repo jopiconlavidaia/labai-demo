@@ -2409,8 +2409,13 @@ function Reports({ apiKey, aiLive, onAiResult, samples, specialties, showToast, 
   useEffect(()=>{
     if (sample) {
       setSpec(sample.spec);
-      setTemplate(templatesFor(sample.spec)[0]);
-      // prefill realistic clinical text by specialty
+      // Si el caso ya trae descripción macroscópica (paso de Inclusión) o
+      // diagnóstico (paso de Diagnóstico) reales, se arranca con eso en vez
+      // de un texto de relleno — solo se usa el preset genérico si falta.
+      const knownTemplate = templatesFor(sample.spec).find(t =>
+        (sample.diagnosisText||'').toLowerCase().includes(t.toLowerCase())
+      );
+      setTemplate(knownTemplate || templatesFor(sample.spec)[0]);
       const presets = {
         'Dermatopatología': ['Fragmento cutáneo de 0,8 x 0,6 cm con lesión pigmentada central de bordes irregulares.', 'Proliferación melanocítica atípica de disposición lentiginosa y nidos irregulares en unión dermoepidérmica. Pleomorfismo nuclear moderado. Se observan mitosis dérmicas. Índice de Breslow 1,2 mm.'],
         'Patología mamaria': ['Cilindros de tejido mamario (BAG), conjunto 1,5 cm.', 'Proliferación epitelial de patrón infiltrante con formación de túbulos (<10%). Pleomorfismo nuclear grado 2. Estroma desmoplásico. Receptores hormonales pendientes de inmunohistoquímica.'],
@@ -2418,7 +2423,8 @@ function Reports({ apiKey, aiLive, onAiResult, samples, specialties, showToast, 
         'Digestiva': ['Tres fragmentos de mucosa colónica, el mayor de 0,4 cm.', 'Mucosa colónica con arquitectura glandular tubular y displasia epitelial de bajo grado. No se observa invasión de la muscularis mucosae. Sin signos de malignidad.'],
       };
       const preset = presets[sample.spec] || GENERIC_PRESET;
-      setMacro(preset[0]); setMicro(preset[1]);
+      setMacro(sample.desc?.trim() || preset[0]);
+      setMicro(sample.diagnosisText?.trim() || preset[1]);
       setReport('');
     }
   }, [sampleId]);
