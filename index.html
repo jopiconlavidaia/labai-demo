@@ -925,6 +925,19 @@ const MACRO_TEMPLATES = {
   'Punción con aguja fina': 'Material de punción con aguja fina, [nº] pases, de aspecto [descripción].',
 };
 const DEFAULT_TECHNIQUES = ['H&E (rutina)', 'PAS', 'Giemsa', 'Inmunohistoquímica', 'Tinción especial'];
+
+// Diagnóstico: el patólogo apunta un código abreviado propio del laboratorio
+// (p. ej. "piel 1.3") y el sistema carga el texto de diagnóstico que tienen
+// preformateado para ese código — el código se va ampliando con el uso, igual
+// que el resto de listas abiertas.
+const DEFAULT_DIAGNOSIS_CODES = {
+  'piel 1.3': 'Piel con lesión pigmentada de naturaleza benigna (nevus melanocítico).',
+  'piel 2.1': 'Piel con carcinoma basocelular.',
+  'mama 1.1': 'Mama con carcinoma ductal infiltrante.',
+  'mama 2.1': 'Mama con cambios fibroquísticos benignos.',
+  'gineco 1.2': 'Cérvix con lesión intraepitelial escamosa de bajo grado (LSIL).',
+  'digest 1.1': 'Colon con adenoma tubular.',
+};
 const slugify = (name) => (name.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'cliente');
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
 
@@ -1200,12 +1213,14 @@ function App() {
   const [doctors, setDoctors] = useState(() => loadStored('labai_doctors', DEFAULT_DOCTORS));
   const [materials, setMaterials] = useState(() => loadStored('labai_materials', DEFAULT_MATERIALS));
   const [techniques, setTechniques] = useState(() => loadStored('labai_techniques', DEFAULT_TECHNIQUES));
+  const [diagnosisCodes, setDiagnosisCodes] = useState(() => loadStored('labai_diagnosis_codes', DEFAULT_DIAGNOSIS_CODES));
   useEffect(() => { saveStored('labai_specialties', specialties); }, [specialties]);
   useEffect(() => { saveStored('labai_clients', clients); }, [clients]);
   useEffect(() => { saveStored('labai_insurers', insurers); }, [insurers]);
   useEffect(() => { saveStored('labai_doctors', doctors); }, [doctors]);
   useEffect(() => { saveStored('labai_materials', materials); }, [materials]);
   useEffect(() => { saveStored('labai_techniques', techniques); }, [techniques]);
+  useEffect(() => { saveStored('labai_diagnosis_codes', diagnosisCodes); }, [diagnosisCodes]);
   // "Fijar datos": recuerda centro/mútua/médico de la última muestra registrada
   // para precargarlos en la siguiente (mismo lote, mismo centro).
   const [lastReception, setLastReception] = useState(null);
@@ -1275,6 +1290,11 @@ function App() {
     if (!clean || techniques.includes(clean)) return;
     setTechniques(prev => [...prev, clean]);
   };
+  const addDiagnosisCode = (code, text) => {
+    const clean = code.trim();
+    if (!clean || diagnosisCodes[clean]) return;
+    setDiagnosisCodes(prev => ({ ...prev, [clean]: text.trim() }));
+  };
   const updateSample = (id, patch) => {
     setSamples(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
   };
@@ -1328,7 +1348,7 @@ function App() {
         <div className="content">
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
             {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
@@ -1336,7 +1356,7 @@ function App() {
             {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
             {view === 'team'      && <Team specialties={specialties} />}
-            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
+            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
       </div>
@@ -1612,7 +1632,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
   const [mode, setMode] = useState('kanban');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -1753,14 +1773,14 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
         <div className="card"><div className="empty"><div className="empty-ico">{I.search}</div><h3>Sin resultados</h3><p>No hay muestras que coincidan con los filtros o la búsqueda actual.</p>{q && <button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>Limpiar búsqueda</button>}</div></div>
       )}
 
-      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} markLabelsPrinted={markLabelsPrinted} setSelected={setSelected} onOpenReport={onOpenReport} />}
+      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} setSelected={setSelected} onOpenReport={onOpenReport} />}
       {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} />}
       {showLabels && <LabelsModal candidates={pendingLabels} onClose={()=>setShowLabels(false)} markPrinted={markLabelsPrinted} />}
     </div>
   );
 }
 
-function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, markLabelsPrinted=null, setSelected, onOpenReport }) {
+function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, diagnosisCodes={}, addDiagnosisCode=()=>{}, markLabelsPrinted=null, setSelected, onOpenReport }) {
   const [showLabels, setShowLabels] = useState(false);
   const s = sample;
   const [bg,fg] = specStyle(specialties, s.spec);
@@ -1801,15 +1821,41 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
     if (JSON.stringify(s.blockCounts||{}) !== JSON.stringify(blockCounts)) patch.blockCounts = blockCounts;
     if (Object.keys(patch).length) updateSample && updateSample(s.id, patch);
   };
+
+  // Diagnóstico: la patóloga apunta un código abreviado propio del laboratorio
+  // y el sistema carga el texto de diagnóstico preformateado para ese código
+  // — la secretaria solo lo transcribe al informe, tal como lo describían.
+  const [diagCode, setDiagCode] = useState(s.diagnosisCode || '');
+  const [diagText, setDiagText] = useState(s.diagnosisText || '');
+  const inDiagnosis = s.state === 'diagnostico';
+  const diagnosisMissing = inDiagnosis && (!diagCode.trim() || !diagText.trim());
+
+  const applyDiagCode = (code) => {
+    setDiagCode(code);
+    const known = diagnosisCodes[code.trim()];
+    if (known && !diagText.trim()) setDiagText(known);
+  };
+
+  const saveDiagnosis = () => {
+    const patch = {};
+    if ((s.diagnosisCode||'') !== diagCode) patch.diagnosisCode = diagCode;
+    if ((s.diagnosisText||'') !== diagText) patch.diagnosisText = diagText;
+    if (Object.keys(patch).length) updateSample && updateSample(s.id, patch);
+  };
+
   const advance = () => {
-    if (inclusionMissing) return;
+    if (inclusionMissing || diagnosisMissing) return;
     if (inInclusion) {
       if (material.trim() && !materials.includes(material.trim())) addMaterial(material.trim());
       if (technique.trim() && !techniques.includes(technique.trim())) addTechnique(technique.trim());
+      saveInclusion();
     }
-    saveInclusion();
+    if (inDiagnosis) {
+      if (diagCode.trim() && !diagnosisCodes[diagCode.trim()]) addDiagnosisCode(diagCode.trim(), diagText.trim());
+      saveDiagnosis();
+    }
     updateState(s.id, nextState);
-    setSelected({ ...s, state: nextState, desc, material, technique, blockCounts });
+    setSelected({ ...s, state: nextState, desc, material, technique, blockCounts, diagnosisCode:diagCode, diagnosisText:diagText });
   };
 
   return (
@@ -1914,6 +1960,22 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
             {s.slides===0 && !s.blockCounts && !s.blocks && <div style={{fontSize:12,color:'var(--text-3)',padding:'4px 0'}}>Láminas pendientes de corte y tinción.</div>}
           </div>
 
+          <div className="section-title">Diagnóstico · código del laboratorio</div>
+          {inDiagnosis ? (
+            <div>
+              <input className="field-input" list="diagcodes-dl" placeholder="Código, p. ej. piel 1.3" value={diagCode} onChange={e=>applyDiagCode(e.target.value)} onBlur={saveDiagnosis} style={{marginBottom:8}}/>
+              <datalist id="diagcodes-dl">{Object.keys(diagnosisCodes).map(c=><option key={c} value={c}/>)}</datalist>
+              <textarea className="field-input" rows={2} value={diagText} onChange={e=>setDiagText(e.target.value)} onBlur={saveDiagnosis}
+                placeholder="Texto de diagnóstico para el informe (se carga solo si el código ya existe)."/>
+              {!diagnosisCodes[diagCode.trim()] && diagCode.trim() && <div className="inline-hint">Código nuevo: se guardará con el texto que escribas para la próxima vez.</div>}
+              {diagnosisMissing && <div className="inline-hint">Completa código y texto para poder validar.</div>}
+            </div>
+          ) : (
+            <div className="desc-box">
+              {diagText.trim() ? <>{diagCode && <span className="mono" style={{fontWeight:600}}>{diagCode}</span>}{diagCode?' — ':''}{diagText}</> : <span style={{color:'var(--text-3)',fontStyle:'italic'}}>Sin diagnóstico registrado todavía.</span>}
+            </div>
+          )}
+
           <div className="section-title">Codificación SNOMED CT</div>
           <div className="snomed-box">
             <div className="snomed-code">Morfología: {sn.code} · {sn.t}</div>
@@ -1932,9 +1994,9 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
           </div>
         </div>
         <div className="drawer-foot">
-          {canAdvance && <button className="btn btn-primary" style={{flex:1}} onClick={advance} disabled={inclusionMissing} title={inclusionMissing?'Completa material, descripción y técnica':''}>Avanzar a: {STATES[nextState].label}</button>}
+          {canAdvance && <button className="btn btn-primary" style={{flex:1}} onClick={advance} disabled={inclusionMissing || diagnosisMissing} title={inclusionMissing?'Completa material, descripción y técnica':diagnosisMissing?'Completa el código y el texto de diagnóstico':''}>Avanzar a: {STATES[nextState].label}</button>}
           {!canAdvance && <button className="btn btn-soft" style={{flex:1}} disabled>Caso validado y cerrado</button>}
-          <button className="btn btn-ghost" onClick={()=>{ saveInclusion(); onClose(); onOpenReport && onOpenReport(s.id); }}>{I.doc} Informe</button>
+          <button className="btn btn-ghost" onClick={()=>{ saveInclusion(); saveDiagnosis(); onClose(); onOpenReport && onOpenReport(s.id); }}>{I.doc} Informe</button>
         </div>
       </div>
     </div>
