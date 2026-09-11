@@ -890,6 +890,20 @@ function parseNumberQuery(raw) {
 // médico distintos aunque vengan del mismo centro), no del cliente/centro en sí.
 const DEFAULT_INSURERS = ['Asisa', 'Adeslas', 'DKV', 'Sanitas', 'Mapfre', 'Axa', 'Particular'];
 const DEFAULT_DOCTORS = ['Dr. Pujol', 'Dr. Sànchez'];
+
+// Macroscopia / inclusión: tipo de material (lista abierta) con una descripción
+// preformateada por tipo — el técnico solo completa lo que falta (medidas,
+// aspecto…), igual que describían del sistema real. Técnicas: lista abierta,
+// "rutina" (H&E) es la que se usa en la inmensa mayoría de los casos.
+const DEFAULT_MATERIALS = ['Fragmento de piel', 'Biopsia endoscópica', 'Pieza quirúrgica', 'Citología', 'Punción con aguja fina'];
+const MACRO_TEMPLATES = {
+  'Fragmento de piel': 'Fragmento de piel de [medidas] cm, con lesión [descripción]. Se tinta el borde quirúrgico y se incluye totalidad.',
+  'Biopsia endoscópica': '[nº] fragmentos de mucosa de [medidas] mm, de coloración [descripción]. Se incluye totalidad.',
+  'Pieza quirúrgica': 'Pieza quirúrgica de [medidas] cm, con [descripción de superficie y bordes]. Cortes seriados.',
+  'Citología': 'Extensión / líquido para estudio citológico, procesado según protocolo.',
+  'Punción con aguja fina': 'Material de punción con aguja fina, [nº] pases, de aspecto [descripción].',
+};
+const DEFAULT_TECHNIQUES = ['H&E (rutina)', 'PAS', 'Giemsa', 'Inmunohistoquímica', 'Tinción especial'];
 const slugify = (name) => (name.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'cliente');
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
 
@@ -1142,10 +1156,14 @@ function App() {
   const [clients, setClients] = useState(() => loadStored('labai_clients', DEFAULT_CLIENTS));
   const [insurers, setInsurers] = useState(() => loadStored('labai_insurers', DEFAULT_INSURERS));
   const [doctors, setDoctors] = useState(() => loadStored('labai_doctors', DEFAULT_DOCTORS));
+  const [materials, setMaterials] = useState(() => loadStored('labai_materials', DEFAULT_MATERIALS));
+  const [techniques, setTechniques] = useState(() => loadStored('labai_techniques', DEFAULT_TECHNIQUES));
   useEffect(() => { saveStored('labai_specialties', specialties); }, [specialties]);
   useEffect(() => { saveStored('labai_clients', clients); }, [clients]);
   useEffect(() => { saveStored('labai_insurers', insurers); }, [insurers]);
   useEffect(() => { saveStored('labai_doctors', doctors); }, [doctors]);
+  useEffect(() => { saveStored('labai_materials', materials); }, [materials]);
+  useEffect(() => { saveStored('labai_techniques', techniques); }, [techniques]);
   // "Fijar datos": recuerda centro/mútua/médico de la última muestra registrada
   // para precargarlos en la siguiente (mismo lote, mismo centro).
   const [lastReception, setLastReception] = useState(null);
@@ -1202,6 +1220,16 @@ function App() {
     if (!clean || doctors.includes(clean)) return;
     setDoctors(prev => [...prev, clean]);
   };
+  const addMaterial = (name) => {
+    const clean = name.trim();
+    if (!clean || materials.includes(clean)) return;
+    setMaterials(prev => [...prev, clean]);
+  };
+  const addTechnique = (name) => {
+    const clean = name.trim();
+    if (!clean || techniques.includes(clean)) return;
+    setTechniques(prev => [...prev, clean]);
+  };
   const updateSample = (id, patch) => {
     setSamples(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
   };
@@ -1255,7 +1283,7 @@ function App() {
         <div className="content">
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
             {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
@@ -1263,7 +1291,7 @@ function App() {
             {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
             {view === 'team'      && <Team specialties={specialties} />}
-            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
+            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
       </div>
@@ -1539,7 +1567,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
   const [mode, setMode] = useState('kanban');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -1677,13 +1705,13 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
         <div className="card"><div className="empty"><div className="empty-ico">{I.search}</div><h3>Sin resultados</h3><p>No hay muestras que coincidan con los filtros o la búsqueda actual.</p>{q && <button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>Limpiar búsqueda</button>}</div></div>
       )}
 
-      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} setSelected={setSelected} onOpenReport={onOpenReport} />}
+      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} setSelected={setSelected} onOpenReport={onOpenReport} />}
       {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} />}
     </div>
   );
 }
 
-function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, setSelected, onOpenReport }) {
+function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, setSelected, onOpenReport }) {
   const s = sample;
   const [bg,fg] = specStyle(specialties, s.spec);
   const trace = TRACE(s);
@@ -1694,17 +1722,44 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
   const nextState = order[Math.min(order.indexOf(s.state)+1, order.length-1)];
   const canAdvance = s.state !== 'validado';
   const [desc, setDesc] = useState(s.desc || '');
+  const [material, setMaterial] = useState(s.material || '');
+  const [technique, setTechnique] = useState(s.technique || techniques[0] || 'H&E (rutina)');
+  // Nº de bloques de parafina por bote (una muestra puede necesitar más de uno,
+  // p. ej. A1, A2, A3): se parte de 1 por bote y el técnico ajusta el que haga falta.
+  const [blockCounts, setBlockCounts] = useState(() => {
+    if (s.blockCounts) return s.blockCounts;
+    const init = {}; letters.forEach(l => init[l] = 1); return init;
+  });
+  const setBlocksFor = (letter, n) => setBlockCounts(prev => ({ ...prev, [letter]: Math.max(1, Math.min(9, Number(n)||1)) }));
+  const totalBlocks = Object.values(blockCounts).reduce((a,b)=>a+(Number(b)||0), 0);
 
-  // El paso de Inclusión exige describir las muestras antes de continuar (no solo validar).
+  // El paso de Inclusión exige material, descripción macroscópica y técnica antes
+  // de continuar (no solo validar) — es lo que describían como imprescindible.
   const inInclusion = s.state === 'tallado';
-  const descRequired = inInclusion && !desc.trim();
+  const inclusionMissing = inInclusion && (!material.trim() || !desc.trim() || !technique.trim());
 
-  const saveDesc = () => { if ((s.desc||'') !== desc) updateSample && updateSample(s.id, { desc }); };
+  const applyTemplate = (mat) => {
+    setMaterial(mat);
+    if (!desc.trim() && MACRO_TEMPLATES[mat]) setDesc(MACRO_TEMPLATES[mat]);
+  };
+
+  const saveInclusion = () => {
+    const patch = {};
+    if ((s.desc||'') !== desc) patch.desc = desc;
+    if ((s.material||'') !== material) patch.material = material;
+    if ((s.technique||'') !== technique) patch.technique = technique;
+    if (JSON.stringify(s.blockCounts||{}) !== JSON.stringify(blockCounts)) patch.blockCounts = blockCounts;
+    if (Object.keys(patch).length) updateSample && updateSample(s.id, patch);
+  };
   const advance = () => {
-    if (descRequired) return;
-    saveDesc();
+    if (inclusionMissing) return;
+    if (inInclusion) {
+      if (material.trim() && !materials.includes(material.trim())) addMaterial(material.trim());
+      if (technique.trim() && !techniques.includes(technique.trim())) addTechnique(technique.trim());
+    }
+    saveInclusion();
     updateState(s.id, nextState);
-    setSelected({ ...s, state: nextState, desc });
+    setSelected({ ...s, state: nextState, desc, material, technique, blockCounts });
   };
 
   return (
@@ -1744,26 +1799,60 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
             ))}
           </div>
 
+          <div className="section-title">Macroscopia · tipo de material</div>
+          {inInclusion ? (
+            <div>
+              <input className="field-input" list="materials-dl" placeholder="Escribe o elige un tipo de material…" value={material} onChange={e=>applyTemplate(e.target.value)}/>
+              <datalist id="materials-dl">{materials.map(m=><option key={m} value={m}/>)}</datalist>
+              {!material.trim() && <div className="inline-hint">Elige el tipo de material: carga la descripción preformateada.</div>}
+            </div>
+          ) : (
+            <div className="desc-box">{material || <span style={{color:'var(--text-3)',fontStyle:'italic'}}>Sin tipo de material registrado.</span>}</div>
+          )}
+
           <div className="section-title">Descripción macroscópica de las muestras</div>
           {inInclusion ? (
             <div>
-              <textarea className="field-input" rows={3} value={desc} onChange={e=>setDesc(e.target.value)} onBlur={saveDesc}
+              <textarea className="field-input" rows={3} value={desc} onChange={e=>setDesc(e.target.value)} onBlur={saveInclusion}
                 placeholder="Describe las muestras recibidas (nº de fragmentos, tamaño, color, tallado…) antes de pasar al siguiente paso."/>
-              {descRequired && <div className="inline-hint">Escribe la descripción para poder avanzar a Procesamiento.</div>}
+              {!desc.trim() && <div className="inline-hint">Escribe la descripción para poder avanzar a Procesamiento.</div>}
             </div>
           ) : (
             <div className="desc-box">{desc.trim() ? desc : <span style={{color:'var(--text-3)',fontStyle:'italic'}}>Sin descripción registrada en el paso de inclusión.</span>}</div>
           )}
 
-          <div className="section-title">Material procesado</div>
+          <div className="section-title">Técnica</div>
+          {inInclusion ? (
+            <div>
+              <input className="field-input" list="techniques-dl" placeholder="H&E (rutina), PAS…" value={technique} onChange={e=>setTechnique(e.target.value)} onBlur={saveInclusion}/>
+              <datalist id="techniques-dl">{techniques.map(t=><option key={t} value={t}/>)}</datalist>
+            </div>
+          ) : (
+            <div className="desc-box">{technique || <span style={{color:'var(--text-3)',fontStyle:'italic'}}>Sin técnica registrada.</span>}</div>
+          )}
+
+          <div className="section-title">Material procesado{inInclusion ? ` · ${totalBlocks} bloque${totalBlocks!==1?'s':''} en total` : ''}</div>
+          {inInclusion && (
+            <div className="chip-row" style={{marginBottom:8}}>
+              {letters.map(l=>(
+                <div key={'bc'+l} style={{display:'flex',alignItems:'center',gap:6,fontSize:12,background:'var(--bg-soft, #f4f5f7)',borderRadius:8,padding:'5px 8px'}}>
+                  <span style={{fontWeight:600}}>Bote {l}</span>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{width:24,height:24,padding:0}} onClick={()=>setBlocksFor(l,(blockCounts[l]||1)-1)} disabled={(blockCounts[l]||1)<=1} aria-label={`Restar bloque a ${l}`}>−</button>
+                  <span style={{minWidth:14,textAlign:'center'}}>{blockCounts[l]||1}</span>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{width:24,height:24,padding:0}} onClick={()=>setBlocksFor(l,(blockCounts[l]||1)+1)} disabled={(blockCounts[l]||1)>=9} aria-label={`Sumar bloque a ${l}`}>+</button>
+                  <span style={{color:'var(--text-3)'}}>bloque{(blockCounts[l]||1)!==1?'s':''}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="chip-row">
-            {Array.from({length:Math.max(s.blocks,1)}).map((_,i)=>(
-              <div className="obj-chip" key={'b'+i}><span className="oc-ico">{GL.layers}</span><span className="oc-id">{s.caseCode}-B{i+1}</span><span className="oc-meta">Bloque parafina</span></div>
-            ))}
+            {letters.flatMap(l => Array.from({length: inInclusion ? (blockCounts[l]||0) : (s.blockCounts ? (s.blockCounts[l]||0) : (l==='A' ? Math.max(s.blocks||0,0) : 0))}).map((_,i)=>(
+              <div className="obj-chip" key={'b'+l+i}><span className="oc-ico">{GL.layers}</span><span className="oc-id">{s.caseCode}-{l}{i+1}</span><span className="oc-meta">Bloque parafina</span></div>
+            )))}
             {Array.from({length:s.slides}).map((_,i)=>(
               <div className="obj-chip" key={'sl'+i}><span className="oc-ico">{GL.micro}</span><span className="oc-id">{s.caseCode}-L{i+1}</span><span className="oc-meta">H&E</span></div>
             ))}
-            {s.slides===0 && <div style={{fontSize:12,color:'var(--text-3)',padding:'4px 0'}}>Láminas pendientes de corte y tinción.</div>}
+            {s.slides===0 && !s.blockCounts && !s.blocks && <div style={{fontSize:12,color:'var(--text-3)',padding:'4px 0'}}>Láminas pendientes de corte y tinción.</div>}
           </div>
 
           <div className="section-title">Codificación SNOMED CT</div>
@@ -1784,9 +1873,9 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
           </div>
         </div>
         <div className="drawer-foot">
-          {canAdvance && <button className="btn btn-primary" style={{flex:1}} onClick={advance} disabled={descRequired} title={descRequired?'Escribe la descripción de las muestras':''}>Avanzar a: {STATES[nextState].label}</button>}
+          {canAdvance && <button className="btn btn-primary" style={{flex:1}} onClick={advance} disabled={inclusionMissing} title={inclusionMissing?'Completa material, descripción y técnica':''}>Avanzar a: {STATES[nextState].label}</button>}
           {!canAdvance && <button className="btn btn-soft" style={{flex:1}} disabled>Caso validado y cerrado</button>}
-          <button className="btn btn-ghost" onClick={()=>{ saveDesc(); onClose(); onOpenReport && onOpenReport(s.id); }}>{I.doc} Informe</button>
+          <button className="btn btn-ghost" onClick={()=>{ saveInclusion(); onClose(); onOpenReport && onOpenReport(s.id); }}>{I.doc} Informe</button>
         </div>
       </div>
     </div>
