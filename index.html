@@ -842,6 +842,8 @@ const I = {
   print:    <Ico d={<><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></>} size={15}/>,
   doc:      <Ico d={<><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></>} size={15}/>,
   micro:    <Ico d={<><path d="M6 18h8M3 22h18M14 22a7 7 0 100-14h-1M9 14h2M9 12a2 2 0 01-2-2V6a2 2 0 012-2 2 2 0 012 2v4a2 2 0 01-2 2z"/></>} size={15}/>,
+  admin:    <Ico d={<><path d="M9 2h6a1 1 0 011 1v18l-4-2-4 2V3a1 1 0 011-1z"/><path d="M9 8h6M9 12h6"/></>}/>,
+  world:    <Ico d={<><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></>} size={15}/>,
 };
 
 /* ════════════════ DATA ════════════════
@@ -940,6 +942,39 @@ const DEFAULT_DIAGNOSIS_CODES = {
 };
 const slugify = (name) => (name.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'cliente');
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
+
+/* ════════════════ ADMINISTRACIÓN: ofertas, pedidos, albaranes, facturas, proformas ════════════════
+   El "kit básico" de CRM que pedía el laboratorio, conectado con clientes y con las
+   muestras reales (usa el tipo B/C/P y la tarifa/descuento que ya tiene cada cliente
+   en "Clientes y tarifas") — es la pieza de facturación que describían en los audios
+   como pendiente de resolver. */
+const DOC_TYPES = {
+  oferta:   { label:'Oferta',   plural:'Ofertas',   prefix:'OF',  statuses:{ borrador:'Borrador', enviada:'Enviada', aceptada:'Aceptada', rechazada:'Rechazada' }, next:{ aceptada:'pedido' } },
+  pedido:   { label:'Pedido',   plural:'Pedidos',   prefix:'PED', statuses:{ pendiente:'Pendiente', confirmado:'Confirmado', completado:'Completado', cancelado:'Cancelado' }, next:{ completado:'albaran' } },
+  albaran:  { label:'Albarán',  plural:'Albaranes', prefix:'ALB', statuses:{ pendiente:'Pendiente', entregado:'Entregado' }, next:{ entregado:'factura' } },
+  factura:  { label:'Factura',  plural:'Facturas',  prefix:'FAC', statuses:{ borrador:'Borrador', emitida:'Emitida', pagada:'Pagada', vencida:'Vencida' }, next:{} },
+  proforma: { label:'Proforma', plural:'Proformas', prefix:'PRO', statuses:{ borrador:'Borrador', enviada:'Enviada', aceptada:'Aceptada' }, next:{} },
+};
+let ADMIN_SEQ = { oferta:1, pedido:1, albaran:1, factura:1, proforma:1 };
+const nextDocCode = (type) => `${DOC_TYPES[type].prefix}-25-${String(ADMIN_SEQ[type]++).padStart(3,'0')}`;
+const docTotal = (doc) => (doc.lines||[]).reduce((sum,l)=>sum+(Number(l.qty)||0)*(Number(l.unitPrice)||0), 0);
+const todayISO = () => new Date().toISOString().slice(0,10);
+// Precio de una muestra para un cliente concreto: tarifa por tipo B/C/P menos su descuento.
+const sampleLinePrice = (client, sample) => {
+  const base = client?.rate?.[sample.tipo] ?? 0;
+  return Math.round(base * (1 - (client?.discount||0)/100) * 100) / 100;
+};
+const sampleToLine = (client, sample) => ({ concept:`${sample.type} (${sample.caseCode})`, tipo:sample.tipo, qty:1, unitPrice:sampleLinePrice(client, sample), sampleId:sample.id });
+
+// Documentos de ejemplo — igual que las muestras, no persisten entre sesiones
+// (se resetean con la demo), para no dejar referencias sueltas a muestras que
+// tampoco persisten.
+const INITIAL_ADMIN_DOCS = [
+  { id:'OF-25-001',  type:'oferta',   code:'OF-25-001',  clientId:'diag',    date:'2025-06-20', status:'enviada',   lines:[{ concept:'Paquete mensual citologías (hasta 40 muestras)', tipo:'C', qty:40, unitPrice:55 }], notes:'Tarifa plana mensual propuesta.' },
+  { id:'PED-25-001', type:'pedido',   code:'PED-25-001', clientId:'mar',     date:'2025-06-24', status:'confirmado',lines:[{ concept:'Biopsias previstas — junio', tipo:'B', qty:12, unitPrice:82 }], notes:'' },
+  { id:'FAC-25-001', type:'factura',  code:'FAC-25-001', clientId:'santpau', date:'2025-06-25', status:'emitida',   lines:[{ concept:'Tumorectomía mama — pieza quirúrgica (25B112)', tipo:'B', qty:1, unitPrice:66 }], notes:'' },
+];
+ADMIN_SEQ = { oferta:2, pedido:2, albaran:1, factura:2, proforma:1 };
 
 // Persistencia sencilla en localStorage, con guarda ante datos corruptos, inexistentes
 // o directamente inaccesibles (file://, modo incógnito, iframes con storage bloqueado...).
@@ -1214,6 +1249,10 @@ function App() {
   const [materials, setMaterials] = useState(() => loadStored('labai_materials', DEFAULT_MATERIALS));
   const [techniques, setTechniques] = useState(() => loadStored('labai_techniques', DEFAULT_TECHNIQUES));
   const [diagnosisCodes, setDiagnosisCodes] = useState(() => loadStored('labai_diagnosis_codes', DEFAULT_DIAGNOSIS_CODES));
+  // Administración (ofertas/pedidos/albaranes/facturas/proformas): como las muestras,
+  // vive en memoria de la sesión, no en localStorage, para no arrastrar referencias
+  // a muestras que ya se han reseteado.
+  const [adminDocs, setAdminDocs] = useState(INITIAL_ADMIN_DOCS);
   useEffect(() => { saveStored('labai_specialties', specialties); }, [specialties]);
   useEffect(() => { saveStored('labai_clients', clients); }, [clients]);
   useEffect(() => { saveStored('labai_insurers', insurers); }, [insurers]);
@@ -1229,6 +1268,9 @@ function App() {
   const [search, setSearch] = useState('');
   const [pendingNewSample, setPendingNewSample] = useState(false);
   const [reportSampleId, setReportSampleId] = useState(null);
+  // Acceso directo a Administración desde otras secciones (cliente, muestra),
+  // para no obligar a "volver atrás" y buscar el documento a mano.
+  const [adminFocus, setAdminFocus] = useState(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // Estado REAL del motor de IA, verificado en vivo (no solo "hay proxy configurado").
   // null = aún no comprobado, 'ok' = responde, 'error' = configurado pero no responde.
@@ -1295,11 +1337,32 @@ function App() {
     if (!clean || diagnosisCodes[clean]) return;
     setDiagnosisCodes(prev => ({ ...prev, [clean]: text.trim() }));
   };
+
+  // Administración: crear marca las muestras usadas como líneas con el nº de
+  // documento que las factura (para no facturarlas dos veces y para poder
+  // saltar desde la muestra al documento). Convertir (oferta→pedido→albarán→
+  // factura) crea el siguiente documento con las mismas líneas y cliente.
+  const addAdminDoc = (doc) => {
+    setAdminDocs(prev => [doc, ...prev]);
+    const sampleIds = (doc.lines||[]).map(l=>l.sampleId).filter(Boolean);
+    if (sampleIds.length) setSamples(prev => prev.map(s => sampleIds.includes(s.id) ? { ...s, billingDocId: doc.id } : s));
+    showToast(`${DOC_TYPES[doc.type].label} ${doc.code} creado/a`);
+  };
+  const updateAdminDoc = (id, patch) => setAdminDocs(prev => prev.map(d => d.id===id ? { ...d, ...patch } : d));
+  const convertAdminDoc = (doc, toType) => {
+    const code = nextDocCode(toType);
+    const newDoc = { id:code, code, type:toType, clientId:doc.clientId, date:todayISO(), status:Object.keys(DOC_TYPES[toType].statuses)[0], lines:doc.lines, notes:doc.notes, convertedFrom:doc.id };
+    updateAdminDoc(doc.id, { convertedTo:newDoc.id });
+    addAdminDoc(newDoc);
+    return newDoc;
+  };
   const updateSample = (id, patch) => {
     setSamples(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
   };
   const updateSampleState = (id, state) => updateSample(id, { state });
   const openReportFor = (id) => { setReportSampleId(id); setView('reports'); };
+  // focus: { clientId? , docId? } — abre Administración centrada en ese cliente o documento.
+  const openAdminFor = (focus) => { setAdminFocus(focus); setView('admin'); };
   const goNewSample = () => { setPendingNewSample(true); setView('samples'); };
   const submitSearch = (q) => { setSearch(q); setView('samples'); };
 
@@ -1331,6 +1394,7 @@ function App() {
     reports:   ['Informes'],
     quality:   ['Calidad y trazabilidad'],
     clients:   ['Clientes y tarifas'],
+    admin:     ['Administración'],
     archive:   ['Archivo histórico'],
     analyze:   ['Análisis IA'],
     team:      ['Equipo'],
@@ -1340,7 +1404,7 @@ function App() {
 
   return (
     <div className="app">
-      <Sidebar view={view} setView={setView} samples={samples} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
+      <Sidebar view={view} setView={setView} samples={samples} adminDocs={adminDocs} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       <div className="main">
         <Topbar title={titles[view]||['']} aiLive={aiLive} onGuide={() => setShowGuide(true)}
                 samples={samples} search={search} setSearch={setSearch} onSubmitSearch={submitSearch} onNavigate={setView}
@@ -1348,15 +1412,16 @@ function App() {
         <div className="content">
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
             {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
-            {view === 'clients'   && <Clients samples={samples} clients={clients} addClient={addClient} updateClient={updateClient} deleteClient={deleteClient} onOpenSamples={()=>setView('samples')} />}
+            {view === 'clients'   && <Clients samples={samples} clients={clients} addClient={addClient} updateClient={updateClient} deleteClient={deleteClient} onOpenSamples={()=>setView('samples')} adminDocs={adminDocs} onOpenAdmin={openAdminFor} />}
+            {view === 'admin'     && <Admin adminDocs={adminDocs} addAdminDoc={addAdminDoc} updateAdminDoc={updateAdminDoc} convertAdminDoc={convertAdminDoc} clients={clients} samples={samples} focus={adminFocus} clearFocus={()=>setAdminFocus(null)} showToast={showToast} />}
             {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
             {view === 'team'      && <Team specialties={specialties} />}
-            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
+            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setAdminDocs(INITIAL_ADMIN_DOCS); ADMIN_SEQ={oferta:2,pedido:2,albaran:1,factura:2,proforma:1}; setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
       </div>
@@ -1368,9 +1433,10 @@ function App() {
 }
 
 /* ════════════════ SIDEBAR ════════════════ */
-function Sidebar({ view, setView, samples, mobileOpen, onCloseMobile }) {
+function Sidebar({ view, setView, samples, adminDocs=[], mobileOpen, onCloseMobile }) {
   const urgent = samples.filter(s => s.urgent && s.state !== 'validado').length;
   const validated = samples.filter(s => s.state === 'validado').length;
+  const pendingDocs = adminDocs.filter(d => ['enviada','pendiente','borrador'].includes(d.status)).length;
   const nav = [
     { group:'Laboratorio', items:[
       { id:'dashboard', ico:I.dash, label:'Panel general' },
@@ -1384,6 +1450,7 @@ function Sidebar({ view, setView, samples, mobileOpen, onCloseMobile }) {
     ]},
     { group:'Gestión', items:[
       { id:'clients', ico:GL.building, label:'Clientes y tarifas' },
+      { id:'admin', ico:I.admin, label:'Administración', badge: pendingDocs ? {n:pendingDocs, t:'amber'} : null },
       { id:'quality', ico:I.quality, label:'Calidad' },
       { id:'team', ico:I.team, label:'Equipo' },
       { id:'settings', ico:I.settings, label:'Configuración' },
@@ -1632,7 +1699,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport, onOpenAdmin }) {
   const [mode, setMode] = useState('kanban');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -1773,14 +1840,14 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
         <div className="card"><div className="empty"><div className="empty-ico">{I.search}</div><h3>Sin resultados</h3><p>No hay muestras que coincidan con los filtros o la búsqueda actual.</p>{q && <button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>Limpiar búsqueda</button>}</div></div>
       )}
 
-      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} setSelected={setSelected} onOpenReport={onOpenReport} />}
+      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={onOpenAdmin} setSelected={setSelected} onOpenReport={onOpenReport} />}
       {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} />}
       {showLabels && <LabelsModal candidates={pendingLabels} onClose={()=>setShowLabels(false)} markPrinted={markLabelsPrinted} />}
     </div>
   );
 }
 
-function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, diagnosisCodes={}, addDiagnosisCode=()=>{}, markLabelsPrinted=null, setSelected, onOpenReport }) {
+function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, diagnosisCodes={}, addDiagnosisCode=()=>{}, markLabelsPrinted=null, onOpenAdmin=null, setSelected, onOpenReport }) {
   const [showLabels, setShowLabels] = useState(false);
   const s = sample;
   const [bg,fg] = specStyle(specialties, s.spec);
@@ -1901,6 +1968,14 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
                 ? <span style={{color:'var(--green)'}}>{GL.check} Etiquetas impresas</span>
                 : <span style={{color:'var(--amber)'}}>{GL.alert} Etiquetas pendientes de imprimir</span>}
               <button className="btn btn-ghost btn-sm" onClick={()=>setShowLabels(true)}>{s.labelsPrinted?'Reimprimir':'Imprimir'} etiquetas</button>
+            </div>
+          )}
+          {onOpenAdmin && (
+            <div style={{display:'flex',alignItems:'center',gap:10,marginTop:8,fontSize:12.5}}>
+              {s.billingDocId
+                ? <span style={{color:'var(--green)'}}>{GL.check} Facturación: {s.billingDocId}</span>
+                : <span style={{color:'var(--text-3)'}}>{GL.alert} Sin incluir en ningún documento de Administración</span>}
+              <button className="btn btn-ghost btn-sm" onClick={()=>onOpenAdmin(s.billingDocId ? { docId:s.billingDocId } : { clientId:s.client, sampleId:s.id, openNew:true })}>{s.billingDocId?'Ver documento':'Crear factura con esta muestra'}</button>
             </div>
           )}
 
@@ -2798,14 +2873,16 @@ function Analyze() {
 }
 
 /* ════════════════ CLIENTES Y TARIFAS ════════════════ */
-function Clients({ samples, clients, addClient, updateClient, deleteClient, onOpenSamples }) {
+function Clients({ samples, clients, addClient, updateClient, deleteClient, onOpenSamples, adminDocs=[], onOpenAdmin }) {
   const [modal, setModal] = useState(null); // null | 'new' | client object a editar
 
   const rows = clients.map(c => {
     const list = samples.filter(s => s.client === c.id);
     const byType = { B:0, C:0, P:0, G:0 };
     list.forEach(s => { byType[s.tipo] = (byType[s.tipo]||0) + 1; });
-    return { ...c, count:list.length, byType };
+    const docs = adminDocs.filter(d => d.clientId === c.id);
+    const docPending = docs.filter(d => ['borrador','enviada','pendiente'].includes(d.status)).length;
+    return { ...c, count:list.length, byType, docCount:docs.length, docPending };
   }).sort((a,b)=>b.count-a.count);
 
   const totalMuestras = rows.reduce((a,b)=>a+b.count,0);
@@ -2885,6 +2962,15 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
                   );
                 })}
               </div>
+            </div>
+
+            <div className="cc-vol" style={{marginBottom:0,borderBottom:'none'}}>
+              <div style={{fontSize:12,color:'var(--text-2)'}}>
+                {c.docCount
+                  ? <>{GL.tag} <strong>{c.docCount}</strong> documento{c.docCount!==1?'s':''} · {c.docPending} pendiente{c.docPending!==1?'s':''}</>
+                  : <span style={{color:'var(--text-3)'}}>Sin ofertas, pedidos ni facturas todavía</span>}
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={()=>onOpenAdmin && onOpenAdmin({ clientId:c.id, openNew:c.docCount===0 })}>{c.docCount?'Ver documentos':'Nuevo documento'}</button>
             </div>
           </div>
         ))}
@@ -2984,6 +3070,297 @@ function ClientModal({ client, onClose, onSave }) {
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" onClick={submit} disabled={!valid}>{client ? 'Guardar cambios' : 'Crear cliente'}</button>
+        </div>
+      </div>
+    </div>
+    </Portal>
+  );
+}
+
+/* ════════════════ ADMINISTRACIÓN ════════════════
+   Ofertas, pedidos, albaranes, facturas y proformas — el "kit básico" de CRM que
+   pedía el laboratorio, con enlaces directos desde Muestras y Clientes para no
+   tener que volver atrás a buscar el documento a mano. */
+function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, clients, samples, focus, clearFocus, showToast }) {
+  const [type, setType] = useState('factura');
+  const [clientFilter, setClientFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [showNew, setShowNew] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+  const [presetSampleId, setPresetSampleId] = useState(null);
+
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.docId) {
+      const doc = adminDocs.find(d=>d.id===focus.docId);
+      if (doc) { setType(doc.type); setSelectedId(doc.id); setClientFilter('all'); }
+    } else if (focus.clientId) {
+      setClientFilter(focus.clientId);
+      setSelectedId(null);
+      if (focus.sampleId) { setPresetSampleId(focus.sampleId); setType('factura'); }
+      if (focus.openNew) setShowNew(true);
+    }
+    clearFocus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus]);
+
+  const q = search.trim().toLowerCase();
+  const filtered = adminDocs.filter(d => {
+    if (d.type !== type) return false;
+    if (clientFilter!=='all' && d.clientId !== clientFilter) return false;
+    if (statusFilter!=='all' && d.status !== statusFilter) return false;
+    const client = clientById(clients, d.clientId)?.name || '';
+    if (q && !(`${d.code} ${client} ${d.notes||''}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const selected = adminDocs.find(d=>d.id===selectedId) || null;
+  const counts = Object.keys(DOC_TYPES).reduce((acc,t)=>{ acc[t]=adminDocs.filter(d=>d.type===t).length; return acc; }, {});
+
+  return (
+    <div>
+      <div className="page-head">
+        <div>
+          <h1>Administración</h1>
+          <p>Ofertas, pedidos, albaranes, facturas y proformas, ligados a clientes y muestras reales</p>
+        </div>
+        <div className="page-head-actions">
+          <button className="btn btn-primary" onClick={()=>setShowNew(true)}>{I.plus} Nuevo/a {DOC_TYPES[type].label.toLowerCase()}</button>
+        </div>
+      </div>
+
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-head" style={{padding:'12px 16px',flexWrap:'wrap',gap:8}}>
+          <div className="seg">
+            {Object.keys(DOC_TYPES).map(t=>(
+              <button key={t} className={type===t?'on':''} onClick={()=>{setType(t); setSelectedId(null);}}>{DOC_TYPES[t].plural} {counts[t]?`(${counts[t]})`:''}</button>
+            ))}
+          </div>
+        </div>
+        <div className="card-head" style={{padding:'10px 16px',borderTop:'1px solid var(--line)',flexWrap:'wrap',gap:10}}>
+          <div className="field" style={{margin:0,minWidth:190}}>
+            <input className="field-input" placeholder="Buscar código, cliente, notas…" value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+          <select className="field-input" style={{maxWidth:220}} value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
+            <option value="all">Todos los clientes / mútuas</option>
+            {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select className="field-input" style={{maxWidth:180}} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+            <option value="all">Todos los estados</option>
+            {Object.entries(DOC_TYPES[type].statuses).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead><tr><th>Código</th><th>Cliente</th><th>Fecha</th><th>Líneas</th><th>Total</th><th>Estado</th></tr></thead>
+            <tbody>
+              {filtered.map(d=>{
+                const client = clientById(clients, d.clientId);
+                return (
+                  <tr key={d.id} onClick={()=>setSelectedId(d.id)}>
+                    <td><span className="mono" style={{fontWeight:600}}>{d.code}</span>{d.convertedFrom && <span style={{color:'var(--text-3)',fontSize:11}}> · desde {d.convertedFrom}</span>}</td>
+                    <td style={{color:'var(--text-2)'}}>{client?.name || '—'}</td>
+                    <td style={{color:'var(--text-3)',fontSize:12}}>{d.date}</td>
+                    <td>{(d.lines||[]).length}</td>
+                    <td style={{fontWeight:600}}>{docTotal(d).toFixed(2)} €</td>
+                    <td><span className="status-pill" style={{background:'#eef1f4',color:'#5f7488'}}>{DOC_TYPES[type].statuses[d.status]||d.status}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {filtered.length===0 && (
+          <div className="empty"><div className="empty-ico">{I.admin}</div><h3>Sin {DOC_TYPES[type].plural.toLowerCase()}</h3><p>Crea la primera con «Nuevo/a {DOC_TYPES[type].label.toLowerCase()}».</p></div>
+        )}
+      </div>
+
+      {showNew && <DocModal type={type} clients={clients} samples={samples} presetClientId={clientFilter!=='all'?clientFilter:undefined} presetSampleId={presetSampleId}
+        onClose={()=>{setShowNew(false); setPresetSampleId(null);}}
+        onCreate={(doc)=>{ addAdminDoc(doc); setShowNew(false); setPresetSampleId(null); setSelectedId(doc.id); }} />}
+
+      {selected && <DocDrawer doc={selected} clients={clients} onClose={()=>setSelectedId(null)}
+        updateStatus={(status)=>updateAdminDoc(selected.id, {status})}
+        onConvert={()=>{
+          const toType = DOC_TYPES[selected.type].next[selected.status];
+          if (!toType) return;
+          const nd = convertAdminDoc(selected, toType);
+          setType(toType); setSelectedId(nd.id);
+        }}
+        onOpenRelated={(id)=>{ const d=adminDocs.find(x=>x.id===id); if (d) { setType(d.type); setSelectedId(d.id); } }}
+      />}
+    </div>
+  );
+}
+
+function DocModal({ type, clients, samples, presetClientId, presetSampleId, onClose, onCreate }) {
+  const [clientId, setClientId] = useState(presetClientId || clients[0]?.id || '');
+  const [date, setDate] = useState(todayISO());
+  const [notes, setNotes] = useState('');
+  const client = clientById(clients, clientId);
+  const [lines, setLines] = useState(() => {
+    if (presetSampleId) {
+      const s = samples.find(x=>x.id===presetSampleId);
+      if (s) return [sampleToLine(client, s)];
+    }
+    return [];
+  });
+  const unbilled = samples.filter(s => s.client===clientId && !s.billingDocId);
+  const total = lines.reduce((a,l)=>a+(Number(l.qty)||0)*(Number(l.unitPrice)||0), 0);
+
+  const toggleSample = (s) => {
+    setLines(prev => prev.some(l=>l.sampleId===s.id)
+      ? prev.filter(l=>l.sampleId!==s.id)
+      : [...prev, sampleToLine(client, s)]);
+  };
+  const addManualLine = () => setLines(prev => [...prev, { concept:'', tipo:'G', qty:1, unitPrice:0 }]);
+  const setLine = (i, patch) => setLines(prev => prev.map((l,idx)=>idx===i?{...l,...patch}:l));
+  const removeLine = (i) => setLines(prev => prev.filter((_,idx)=>idx!==i));
+
+  const valid = clientId && lines.length>0 && lines.every(l=>l.concept.trim());
+
+  const submit = () => {
+    if (!valid) return;
+    const code = nextDocCode(type);
+    onCreate({ id:code, code, type, clientId, date, status:Object.keys(DOC_TYPES[type].statuses)[0], lines, notes });
+  };
+
+  return (
+    <Portal>
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{width:680}}>
+        <div className="modal-head">
+          <h3>{I.plus} Nuevo/a {DOC_TYPES[type].label.toLowerCase()}</h3>
+          <p>El código se asigna automáticamente. Añade líneas desde las muestras del cliente o a mano.</p>
+        </div>
+        <div className="modal-body">
+          <div className="new-sample-grid">
+            <div className="field">
+              <label className="field-label">Cliente / mútua *</label>
+              <select className="field-input" value={clientId} onChange={e=>setClientId(e.target.value)}>
+                {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">Fecha</label>
+              <input className="field-input" type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+            </div>
+          </div>
+
+          {unbilled.length>0 && (
+            <>
+              <div className="section-title" style={{marginTop:14}}>Muestras de este cliente sin facturar ({unbilled.length})</div>
+              <div className="card" style={{marginBottom:14}}>
+                {unbilled.map(s=>(
+                  <label key={s.id} className="label-check-row" style={{cursor:'pointer',padding:'8px 12px'}}>
+                    <input type="checkbox" checked={lines.some(l=>l.sampleId===s.id)} onChange={()=>toggleSample(s)} style={{width:15,height:15}}/>
+                    <span className="mono" style={{fontWeight:600}}>{s.caseCode}</span>
+                    <span style={{color:'var(--text-2)'}}>{s.type}</span>
+                    <span style={{color:'var(--text-3)',marginLeft:'auto',fontSize:12}}>{sampleLinePrice(client, s).toFixed(2)} €</span>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="section-title" style={{marginTop:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <span>Líneas del documento</span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addManualLine}>{I.plus} Línea manual</button>
+          </div>
+          {lines.length===0 && <div style={{fontSize:12.5,color:'var(--text-3)',padding:'6px 0 10px'}}>Añade al menos una línea (desde muestras o a mano).</div>}
+          {lines.map((l,i)=>(
+            <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 70px 90px 90px 28px',gap:6,alignItems:'center',marginBottom:6}}>
+              <input className="field-input" placeholder="Concepto" value={l.concept} onChange={e=>setLine(i,{concept:e.target.value})} disabled={!!l.sampleId}/>
+              <input className="field-input" type="number" min="1" value={l.qty} onChange={e=>setLine(i,{qty:Number(e.target.value)||1})}/>
+              <input className="field-input" type="number" min="0" step="0.01" value={l.unitPrice} onChange={e=>setLine(i,{unitPrice:Number(e.target.value)||0})}/>
+              <span style={{fontSize:12.5,fontWeight:600,textAlign:'right'}}>{((Number(l.qty)||0)*(Number(l.unitPrice)||0)).toFixed(2)} €</span>
+              <button type="button" className="icon-btn-sm danger" onClick={()=>removeLine(i)} aria-label="Quitar línea"><Ico d={<><path d="M18 6 6 18M6 6l12 12"/></>} size={13}/></button>
+            </div>
+          ))}
+          <div style={{textAlign:'right',fontSize:15,fontWeight:800,marginTop:8}}>Total: {total.toFixed(2)} €</div>
+
+          <div className="field full" style={{marginTop:14}}>
+            <label className="field-label">Notas (opcional)</label>
+            <textarea className="field-input" rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!valid}>Crear {DOC_TYPES[type].label.toLowerCase()}</button>
+        </div>
+      </div>
+    </div>
+    </Portal>
+  );
+}
+
+function DocDrawer({ doc, clients, onClose, updateStatus, onConvert, onOpenRelated }) {
+  const client = clientById(clients, doc.clientId);
+  const total = docTotal(doc);
+  const nextType = DOC_TYPES[doc.type].next[doc.status];
+
+  return (
+    <Portal>
+    <div className="drawer-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="drawer">
+        <div className="drawer-head">
+          <div>
+            <div className="dh-id"><span className="mono" style={{color:'var(--brand-700)'}}>{doc.code}</span> · {DOC_TYPES[doc.type].label}</div>
+            <h2>{client?.name || '—'}</h2>
+          </div>
+          <button className="drawer-close" onClick={onClose} aria-label="Cerrar"><Ico d={<><path d="M18 6 6 18M6 6l12 12"/></>} size={17}/></button>
+        </div>
+        <div className="drawer-body">
+          <div className="detail-grid">
+            <div className="detail-item"><div className="di-label">Cliente / mútua</div><div className="di-val">{client?.name || '—'}</div></div>
+            <div className="detail-item"><div className="di-label">Fecha</div><div className="di-val">{doc.date}</div></div>
+            <div className="detail-item">
+              <div className="di-label">Estado</div>
+              <select className="field-input" style={{marginTop:2}} value={doc.status} onChange={e=>updateStatus(e.target.value)}>
+                {Object.entries(DOC_TYPES[doc.type].statuses).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div className="detail-item"><div className="di-label">Total</div><div className="di-val" style={{fontWeight:800}}>{total.toFixed(2)} €</div></div>
+          </div>
+
+          {(doc.convertedFrom || doc.convertedTo) && (
+            <div className="chip-row" style={{marginTop:10}}>
+              {doc.convertedFrom && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenRelated(doc.convertedFrom)}>← Generado desde {doc.convertedFrom}</button>}
+              {doc.convertedTo && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenRelated(doc.convertedTo)}>Continúa en {doc.convertedTo} →</button>}
+            </div>
+          )}
+
+          <div className="section-title">Líneas</div>
+          <div className="print-area">
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>
+              BCN Patòlegs — {DOC_TYPES[doc.type].label} {doc.code} — {client?.name} — {doc.date}
+            </div>
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead><tr><th>Concepto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr></thead>
+                <tbody>
+                  {(doc.lines||[]).map((l,i)=>(
+                    <tr key={i}>
+                      <td>{l.concept}</td>
+                      <td>{l.qty}</td>
+                      <td>{Number(l.unitPrice).toFixed(2)} €</td>
+                      <td style={{fontWeight:600}}>{(Number(l.qty)*Number(l.unitPrice)).toFixed(2)} €</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{textAlign:'right',fontSize:15,fontWeight:800,marginTop:10}}>Total: {total.toFixed(2)} €</div>
+          </div>
+
+          {doc.notes && <><div className="section-title">Notas</div><div className="desc-box">{doc.notes}</div></>}
+        </div>
+        <div className="drawer-foot">
+          {nextType && <button className="btn btn-primary" style={{flex:1}} onClick={onConvert}>Convertir a {DOC_TYPES[nextType].label}</button>}
+          <button className="btn btn-ghost" onClick={()=>window.print()}>{I.print} Imprimir</button>
         </div>
       </div>
     </div>
