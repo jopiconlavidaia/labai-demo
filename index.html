@@ -800,6 +800,15 @@
   .label-check-row { display: flex; align-items: center; gap: 9px; padding: 7px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
   .label-check-row:last-child { border-bottom: none; }
 
+  /* ── Personal: horario semanal y calendarios ── */
+  .wk-grid th, .wk-grid td { text-align: center; white-space: nowrap; }
+  .wk-grid th:first-child, .wk-grid td:first-child { text-align: left; white-space: normal; }
+  .wk-chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 4px 7px; border-radius: 6px; }
+  .wk-empty { display: inline-block; width: 24px; height: 24px; line-height: 22px; border-radius: 6px; border: 1px dashed var(--border); color: var(--text-3); font-size: 13px; }
+  .wk-grid td:not(:first-child):hover .wk-empty { border-color: var(--brand); color: var(--brand); }
+  .cal-day { aspect-ratio: 1; border-radius: 6px; border: none; font-size: 12px; background: transparent; }
+  .cal-day:not(:disabled):hover { background: var(--surface-2, #eef1f4); }
+
   @media print {
     body * { visibility: hidden; }
     .print-area, .print-area * { visibility: visible; }
@@ -843,6 +852,7 @@ const I = {
   doc:      <Ico d={<><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></>} size={15}/>,
   micro:    <Ico d={<><path d="M6 18h8M3 22h18M14 22a7 7 0 100-14h-1M9 14h2M9 12a2 2 0 01-2-2V6a2 2 0 012-2 2 2 0 012 2v4a2 2 0 01-2 2z"/></>} size={15}/>,
   admin:    <Ico d={<><path d="M9 2h6a1 1 0 011 1v18l-4-2-4 2V3a1 1 0 011-1z"/><path d="M9 8h6M9 12h6"/></>}/>,
+  calendar: <Ico d={<><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></>}/>,
   world:    <Ico d={<><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></>} size={15}/>,
 };
 
@@ -1011,6 +1021,77 @@ const PATHOLOGISTS = [
   { name:'Dra. Núria Solé',     spec:'Ginecológica',     color:'#3f7d6e', init:'NS', count:6 },
   { name:'Dr. Albert Riera',    spec:'Patología mamaria',color:'#8a5f74', init:'AR', count:4 },
 ];
+
+/* ════════════════ PERSONAL: horario y vacaciones ════════════════
+   Inspirado en el flujo real del Portal Empleado del hotel (calendario de
+   rango de dos meses, bandeja de aprobación, tipos de ausencia con su
+   color) — adaptado a un solo nivel de aprobación (el laboratorio no
+   modela jefe de equipo + RRHH por separado) y a un horario semanal
+   recurrente en vez de turnos día a día, que es lo que pedían: "mover,
+   quitar y asignar horas" de un vistazo, no planificar fecha a fecha.
+   Plantilla ampliada más allá de los patólogos: técnicos, recepción y
+   secretaría son quienes de verdad trabajan por turnos.
+*/
+const STAFF_ROLES = ['Patólogo/a', 'Técnico de laboratorio', 'Recepción', 'Secretaría'];
+// visibility: qué puede ver cada empleado de sus compañeros en su propio calendario.
+// 'own' = solo el suyo · 'team' = su mismo rol/área · 'all' = todo el laboratorio.
+const DEFAULT_STAFF = [
+  { id:'mv',   name:'Dra. Marta Vendrell', role:'Patólogo/a', area:'Dermatopatología', color:'#3f6f8c', init:'MV', weeklyHours:35, vacationTotal:23, visibility:'team' },
+  { id:'jc',   name:'Dr. Jordi Camps',     role:'Patólogo/a', area:'Digestiva',        color:'#8c7444', init:'JC', weeklyHours:35, vacationTotal:23, visibility:'team' },
+  { id:'ns',   name:'Dra. Núria Solé',     role:'Patólogo/a', area:'Ginecológica',     color:'#3f7d6e', init:'NS', weeklyHours:35, vacationTotal:23, visibility:'team' },
+  { id:'ar',   name:'Dr. Albert Riera',    role:'Patólogo/a', area:'Patología mamaria',color:'#8a5f74', init:'AR', weeklyHours:35, vacationTotal:23, visibility:'team' },
+  { id:'lo',   name:'Laura Ortiz',         role:'Técnico de laboratorio', area:'Laboratorio', color:'#3f83a1', init:'LO', weeklyHours:38, vacationTotal:23, visibility:'team' },
+  { id:'pm',   name:'Pau Martí',           role:'Técnico de laboratorio', area:'Laboratorio', color:'#5f7488', init:'PM', weeklyHours:38, vacationTotal:23, visibility:'team' },
+  { id:'sf',   name:'Sonia Ferrer',        role:'Recepción',  area:'Recepción',  color:'#a8792f', init:'SF', weeklyHours:38, vacationTotal:23, visibility:'own' },
+  { id:'nb',   name:'Núria Bosch',         role:'Secretaría', area:'Secretaría', color:'#94a2b0', init:'NB', weeklyHours:38, vacationTotal:23, visibility:'own' },
+];
+// Turnos semanales recurrentes: day 0=lunes … 6=domingo.
+const DEFAULT_SHIFTS = [
+  { id:'sh1', staffId:'mv', day:0, start:'08:00', end:'15:00' }, { id:'sh2', staffId:'mv', day:1, start:'08:00', end:'15:00' }, { id:'sh3', staffId:'mv', day:2, start:'08:00', end:'15:00' }, { id:'sh4', staffId:'mv', day:3, start:'08:00', end:'15:00' }, { id:'sh5', staffId:'mv', day:4, start:'08:00', end:'13:00' },
+  { id:'sh6', staffId:'jc', day:0, start:'08:00', end:'15:00' }, { id:'sh7', staffId:'jc', day:1, start:'08:00', end:'15:00' }, { id:'sh8', staffId:'jc', day:2, start:'08:00', end:'15:00' }, { id:'sh9', staffId:'jc', day:3, start:'08:00', end:'15:00' }, { id:'sh10', staffId:'jc', day:4, start:'08:00', end:'15:00' },
+  { id:'sh11', staffId:'ns', day:0, start:'09:00', end:'17:00' }, { id:'sh12', staffId:'ns', day:1, start:'09:00', end:'17:00' }, { id:'sh13', staffId:'ns', day:3, start:'09:00', end:'17:00' }, { id:'sh14', staffId:'ns', day:4, start:'09:00', end:'14:00' },
+  { id:'sh15', staffId:'ar', day:1, start:'08:00', end:'15:00' }, { id:'sh16', staffId:'ar', day:2, start:'08:00', end:'15:00' }, { id:'sh17', staffId:'ar', day:3, start:'08:00', end:'15:00' }, { id:'sh18', staffId:'ar', day:4, start:'08:00', end:'15:00' },
+  { id:'sh19', staffId:'lo', day:0, start:'07:30', end:'15:30' }, { id:'sh20', staffId:'lo', day:1, start:'07:30', end:'15:30' }, { id:'sh21', staffId:'lo', day:2, start:'07:30', end:'15:30' }, { id:'sh22', staffId:'lo', day:3, start:'07:30', end:'15:30' }, { id:'sh23', staffId:'lo', day:4, start:'07:30', end:'15:30' },
+  { id:'sh24', staffId:'pm', day:0, start:'13:00', end:'20:30' }, { id:'sh25', staffId:'pm', day:1, start:'13:00', end:'20:30' }, { id:'sh26', staffId:'pm', day:2, start:'13:00', end:'20:30' }, { id:'sh27', staffId:'pm', day:3, start:'13:00', end:'20:30' }, { id:'sh28', staffId:'pm', day:4, start:'13:00', end:'20:30' },
+  { id:'sh29', staffId:'sf', day:0, start:'08:00', end:'16:00' }, { id:'sh30', staffId:'sf', day:1, start:'08:00', end:'16:00' }, { id:'sh31', staffId:'sf', day:2, start:'08:00', end:'16:00' }, { id:'sh32', staffId:'sf', day:3, start:'08:00', end:'16:00' }, { id:'sh33', staffId:'sf', day:4, start:'08:00', end:'16:00' },
+  { id:'sh34', staffId:'nb', day:0, start:'09:00', end:'17:00' }, { id:'sh35', staffId:'nb', day:1, start:'09:00', end:'17:00' }, { id:'sh36', staffId:'nb', day:2, start:'09:00', end:'17:00' }, { id:'sh37', staffId:'nb', day:3, start:'09:00', end:'17:00' }, { id:'sh38', staffId:'nb', day:4, start:'09:00', end:'17:00' },
+];
+const REQUEST_TYPES = {
+  vacaciones:    { label:'Vacaciones',      color:'#3f8a63' },
+  personal:      { label:'Día personal',    color:'#a8792f' },
+  cambio_turno:  { label:'Cambio de turno', color:'#2f7d9e' },
+};
+const REQUEST_STATUS = {
+  pendiente: { label:'Pendiente', bg:'#eef1f4', fg:'#5f7488' },
+  aprobada:  { label:'Aprobada',  bg:'var(--green-bg)', fg:'var(--green)' },
+  rechazada: { label:'Rechazada', bg:'var(--red-bg)', fg:'var(--red)' },
+};
+const DOW_LABELS = ['L','M','X','J','V','S','D'];
+const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const pad2 = (n) => String(n).padStart(2,'0');
+// Fechas en horario LOCAL, nunca toISOString() (se desplaza a UTC y puede
+// cambiar el día) — mismo escarmiento que dejaron documentado en el portal.
+const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+function monthMatrix(year, month) {
+  const first = new Date(year, month, 1);
+  const startOffset = (first.getDay()+6)%7; // lunes=0
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const cells = [];
+  for (let i=0;i<startOffset;i++) cells.push(null);
+  for (let d=1; d<=daysInMonth; d++) cells.push(new Date(year,month,d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+function expandDateRange(startISO, endISO) {
+  const out = [];
+  let cur = new Date(startISO+'T00:00:00'); const end = new Date(endISO+'T00:00:00');
+  while (cur <= end) { out.push(ymd(cur)); cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate()+1); }
+  return out;
+}
+const shiftHours = (sh) => {
+  const [sh1,sm1] = sh.start.split(':').map(Number); const [sh2,sm2] = sh.end.split(':').map(Number);
+  return Math.max(0, (sh2*60+sm2 - (sh1*60+sm1)) / 60);
+};
 
 let SID = 926;
 let CASE_SEQ = 131; // correlativo de caso del año (formato 25B127-A); por encima de los datos demo
@@ -1420,6 +1501,11 @@ function App() {
   // vive en memoria de la sesión, no en localStorage, para no arrastrar referencias
   // a muestras que ya se han reseteado.
   const [adminDocs, setAdminDocs] = useState(INITIAL_ADMIN_DOCS);
+  // Personal: plantilla, horario semanal y peticiones — configuración del
+  // laboratorio, persiste igual que clientes/especialidades.
+  const [staff, setStaff] = useState(() => loadStored('labai_staff', DEFAULT_STAFF));
+  const [shifts, setShifts] = useState(() => loadStored('labai_shifts', DEFAULT_SHIFTS));
+  const [staffRequests, setStaffRequests] = useState(() => loadStored('labai_staff_requests', []));
   useEffect(() => { saveStored('labai_specialties', specialties); }, [specialties]);
   useEffect(() => { saveStored('labai_clients', clients); }, [clients]);
   useEffect(() => { saveStored('labai_insurers', insurers); }, [insurers]);
@@ -1427,6 +1513,9 @@ function App() {
   useEffect(() => { saveStored('labai_materials', materials); }, [materials]);
   useEffect(() => { saveStored('labai_techniques', techniques); }, [techniques]);
   useEffect(() => { saveStored('labai_diagnosis_codes', diagnosisCodes); }, [diagnosisCodes]);
+  useEffect(() => { saveStored('labai_staff', staff); }, [staff]);
+  useEffect(() => { saveStored('labai_shifts', shifts); }, [shifts]);
+  useEffect(() => { saveStored('labai_staff_requests', staffRequests); }, [staffRequests]);
   // "Fijar datos": recuerda centro/mútua/médico de la última muestra registrada
   // para precargarlos en la siguiente (mismo lote, mismo centro).
   const [lastReception, setLastReception] = useState(null);
@@ -1523,6 +1612,33 @@ function App() {
     addAdminDoc(newDoc);
     return newDoc;
   };
+
+  // Personal: horario semanal (asignar/mover/quitar horas) y buzón de
+  // peticiones (vacaciones, días, cambios de turno) con aprobación directa.
+  const addStaffMember = (member) => {
+    setStaff(prev => [...prev, { id: uid('st'), weeklyHours:38, vacationTotal:23, visibility:'own', ...member }]);
+  };
+  const updateStaffMember = (id, patch) => setStaff(prev => prev.map(s => s.id===id ? { ...s, ...patch } : s));
+  const deleteStaffMember = (id) => {
+    if (shifts.some(s=>s.staffId===id) || staffRequests.some(r=>r.staffId===id)) { showToast('No se puede eliminar: tiene turnos o peticiones vinculadas.'); return; }
+    setStaff(prev => prev.filter(s=>s.id!==id));
+  };
+  const setShift = (staffId, day, patch) => {
+    setShifts(prev => {
+      const idx = prev.findIndex(s=>s.staffId===staffId && s.day===day);
+      if (idx===-1) return [...prev, { id: uid('sh'), staffId, day, start:'09:00', end:'17:00', ...patch }];
+      return prev.map((s,i)=> i===idx ? { ...s, ...patch } : s);
+    });
+  };
+  const removeShift = (staffId, day) => setShifts(prev => prev.filter(s=>!(s.staffId===staffId && s.day===day)));
+  const addStaffRequest = (req) => {
+    setStaffRequests(prev => [{ id: uid('req'), status:'pendiente', createdAt: todayISO(), ...req }, ...prev]);
+    showToast('Petición enviada');
+  };
+  const decideStaffRequest = (id, status) => {
+    setStaffRequests(prev => prev.map(r => r.id===id ? { ...r, status } : r));
+    showToast(status==='aprobada' ? 'Petición aprobada' : 'Petición rechazada');
+  };
   const updateSample = (id, patch) => {
     setSamples(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
   };
@@ -1562,6 +1678,7 @@ function App() {
     quality:   [t('nav.quality')],
     clients:   [t('nav.clients')],
     admin:     [t('nav.admin')],
+    personal:  ['Personal'],
     archive:   [t('nav.archive')],
     analyze:   [t('nav.analyze')],
     team:      [t('nav.team')],
@@ -1572,7 +1689,7 @@ function App() {
   return (
     <LangContext.Provider value={{ lang, setLang, t }}>
     <div className="app">
-      <Sidebar view={view} setView={setView} samples={samples} adminDocs={adminDocs} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
+      <Sidebar view={view} setView={setView} samples={samples} adminDocs={adminDocs} staffRequests={staffRequests} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       <div className="main">
         <Topbar title={titles[view]||['']} aiLive={aiLive} onGuide={() => setShowGuide(true)}
                 samples={samples} search={search} setSearch={setSearch} onSubmitSearch={submitSearch} onNavigate={setView}
@@ -1586,10 +1703,11 @@ function App() {
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
             {view === 'clients'   && <Clients samples={samples} clients={clients} addClient={addClient} updateClient={updateClient} deleteClient={deleteClient} onOpenSamples={()=>setView('samples')} adminDocs={adminDocs} onOpenAdmin={openAdminFor} />}
             {view === 'admin'     && <Admin adminDocs={adminDocs} addAdminDoc={addAdminDoc} updateAdminDoc={updateAdminDoc} convertAdminDoc={convertAdminDoc} clients={clients} samples={samples} focus={adminFocus} clearFocus={()=>setAdminFocus(null)} showToast={showToast} />}
+            {view === 'personal'  && <Personal staff={staff} addStaffMember={addStaffMember} updateStaffMember={updateStaffMember} deleteStaffMember={deleteStaffMember} shifts={shifts} setShift={setShift} removeShift={removeShift} staffRequests={staffRequests} addStaffRequest={addStaffRequest} decideStaffRequest={decideStaffRequest} showToast={showToast} />}
             {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
             {view === 'team'      && <Team specialties={specialties} />}
-            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setAdminDocs(INITIAL_ADMIN_DOCS); ADMIN_SEQ={oferta:2,pedido:2,albaran:1,factura:2,proforma:1}; setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
+            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setAdminDocs(INITIAL_ADMIN_DOCS); ADMIN_SEQ={oferta:2,pedido:2,albaran:1,factura:2,proforma:1}; setStaff(DEFAULT_STAFF); setShifts(DEFAULT_SHIFTS); setStaffRequests([]); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
       </div>
@@ -1602,11 +1720,12 @@ function App() {
 }
 
 /* ════════════════ SIDEBAR ════════════════ */
-function Sidebar({ view, setView, samples, adminDocs=[], mobileOpen, onCloseMobile }) {
+function Sidebar({ view, setView, samples, adminDocs=[], staffRequests=[], mobileOpen, onCloseMobile }) {
   const { t } = useT();
   const urgent = samples.filter(s => s.urgent && s.state !== 'validado').length;
   const validated = samples.filter(s => s.state === 'validado').length;
   const pendingDocs = adminDocs.filter(d => ['enviada','pendiente','borrador'].includes(d.status)).length;
+  const pendingRequests = staffRequests.filter(r => r.status==='pendiente').length;
   const nav = [
     { group:t('nav.group.lab'), items:[
       { id:'dashboard', ico:I.dash, label:t('nav.dashboard') },
@@ -1621,6 +1740,7 @@ function Sidebar({ view, setView, samples, adminDocs=[], mobileOpen, onCloseMobi
     { group:t('nav.group.mgmt'), items:[
       { id:'clients', ico:GL.building, label:t('nav.clients') },
       { id:'admin', ico:I.admin, label:t('nav.admin'), badge: pendingDocs ? {n:pendingDocs, t:'amber'} : null },
+      { id:'personal', ico:I.calendar, label:'Personal', badge: pendingRequests ? {n:pendingRequests, t:'amber'} : null },
       { id:'quality', ico:I.quality, label:t('nav.quality') },
       { id:'team', ico:I.team, label:t('nav.team') },
       { id:'settings', ico:I.settings, label:t('nav.settings') },
@@ -3560,6 +3680,483 @@ function DocDrawer({ doc, clients, onClose, updateStatus, onConvert, onOpenRelat
       </div>
     </div>
     </Portal>
+  );
+}
+
+/* ════════════════ PERSONAL ════════════════
+   Horario semanal (asignar/mover/quitar horas) y buzón de vacaciones/cambios,
+   con vista de administrador y vista de empleado — como no hay login real en
+   esta demo, un selector simula "entrar como" cada perfil. */
+const DAY_NAMES = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+function visibleColleagues(staff, viewingStaff) {
+  if (!viewingStaff) return [];
+  if (viewingStaff.visibility === 'all') return staff;
+  if (viewingStaff.visibility === 'team') return staff.filter(s=>s.role===viewingStaff.role || s.id===viewingStaff.id);
+  return staff.filter(s=>s.id===viewingStaff.id);
+}
+
+function RangeCalendar({ startDate, endDate, onChange, color='#0088b2', markedDates=new Map() }) {
+  const [visibleMonth, setVisibleMonth] = useState(() => { const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const todayIso = ymd(new Date());
+
+  const handleSelectDay = (day) => {
+    const iso = ymd(day);
+    if (iso < todayIso) return;
+    if (!startDate || (startDate && endDate)) { onChange(iso, null); return; }
+    if (iso < startDate) { onChange(iso, null); return; }
+    onChange(startDate, iso);
+  };
+
+  const renderMonth = (monthDate) => {
+    const cells = monthMatrix(monthDate.getFullYear(), monthDate.getMonth());
+    return (
+      <div style={{flex:'1 1 220px',minWidth:200}}>
+        <p style={{textAlign:'center',fontWeight:700,fontSize:13,marginBottom:8,textTransform:'capitalize'}}>{MONTH_NAMES[monthDate.getMonth()]} {monthDate.getFullYear()}</p>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,textAlign:'center',fontSize:10.5,color:'var(--text-3)',marginBottom:4}}>
+          {DOW_LABELS.map(l=><span key={l}>{l}</span>)}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+          {cells.map((day,i)=>{
+            if (!day) return <span key={i}/>;
+            const iso = ymd(day);
+            const isStart = startDate===iso, isEnd = endDate===iso;
+            const inRange = startDate && endDate && iso>startDate && iso<endDate;
+            const isPast = iso < todayIso;
+            const marked = markedDates.get(iso);
+            const bg = (isStart||isEnd) ? color : inRange ? color+'33' : marked ? marked+'33' : 'transparent';
+            const fg = (isStart||isEnd) ? '#fff' : marked ? marked : 'var(--text)';
+            return (
+              <button key={i} type="button" className="cal-day" disabled={isPast} onClick={()=>handleSelectDay(day)}
+                style={{fontWeight:(isStart||isEnd)?700:500, background:bg, color:isPast?'var(--text-3)':fg,
+                  opacity:isPast?0.4:1, cursor:isPast?'default':'pointer',
+                  boxShadow: iso===todayIso && !isStart && !isEnd ? 'inset 0 0 0 1px var(--brand)' : 'none'}}>
+                {day.getDate()}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const nextMonthDate = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth()+1, 1);
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setVisibleMonth(m=>new Date(m.getFullYear(),m.getMonth()-1,1))}>← Mes anterior</button>
+        {(startDate||endDate) && <button type="button" className="btn btn-ghost btn-sm" onClick={()=>onChange(null,null)}>Borrar selección</button>}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setVisibleMonth(m=>new Date(m.getFullYear(),m.getMonth()+1,1))}>Mes siguiente →</button>
+      </div>
+      <div style={{display:'flex',gap:24,flexWrap:'wrap'}}>
+        {renderMonth(visibleMonth)}
+        {renderMonth(nextMonthDate)}
+      </div>
+    </div>
+  );
+}
+
+function TeamAbsenceCalendar({ staff, staffRequests }) {
+  const [visibleMonth, setVisibleMonth] = useState(() => { const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const approved = staffRequests.filter(r=>r.status==='aprobada' && r.type!=='cambio_turno');
+  const byDay = {};
+  approved.forEach(r=>{
+    expandDateRange(r.startDate, r.endDate||r.startDate).forEach(iso=>{ (byDay[iso] = byDay[iso]||[]).push(r.staffId); });
+  });
+  const nameFor = (id) => staff.find(s=>s.id===id);
+  const cells = monthMatrix(visibleMonth.getFullYear(), visibleMonth.getMonth());
+
+  return (
+    <div className="card" style={{padding:16}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setVisibleMonth(m=>new Date(m.getFullYear(),m.getMonth()-1,1))}>←</button>
+        <strong style={{textTransform:'capitalize',fontSize:13.5}}>{MONTH_NAMES[visibleMonth.getMonth()]} {visibleMonth.getFullYear()}</strong>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setVisibleMonth(m=>new Date(m.getFullYear(),m.getMonth()+1,1))}>→</button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3,textAlign:'center',fontSize:10.5,color:'var(--text-3)',marginBottom:4}}>
+        {DOW_LABELS.map(l=><span key={l}>{l}</span>)}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3}}>
+        {cells.map((day,i)=>{
+          if (!day) return <div key={i}/>;
+          const iso = ymd(day);
+          const people = byDay[iso]||[];
+          return (
+            <div key={i} style={{minHeight:52,border:'1px solid var(--border)',borderRadius:6,padding:3}}>
+              <div style={{fontWeight:600,color:'var(--text-3)',fontSize:10.5}}>{day.getDate()}</div>
+              {people.slice(0,3).map((id,j)=>{
+                const p = nameFor(id);
+                return p ? <div key={j} title={p.name} style={{background:p.color+'22',color:p.color,borderRadius:3,padding:'1px 3px',marginTop:2,fontSize:9.5,fontWeight:700,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{p.init}</div> : null;
+              })}
+              {people.length>3 && <div style={{fontSize:9,color:'var(--text-3)'}}>+{people.length-3}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ShiftEditModal({ staffId, day, staffName, existing, onSave, onRemove, onClose }) {
+  const [start, setStart] = useState(existing?.start || '09:00');
+  const [end, setEnd] = useState(existing?.end || '17:00');
+  const valid = end > start;
+  return (
+    <Portal>
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{width:360}}>
+        <div className="modal-head"><h3>{DAY_NAMES[day]} · {staffName}</h3></div>
+        <div className="modal-body">
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div className="field"><label className="field-label">Entrada</label><input className="field-input" type="time" value={start} onChange={e=>setStart(e.target.value)}/></div>
+            <div className="field"><label className="field-label">Salida</label><input className="field-input" type="time" value={end} onChange={e=>setEnd(e.target.value)}/></div>
+          </div>
+          {!valid && <div className="inline-hint">La salida debe ser después de la entrada.</div>}
+        </div>
+        <div className="modal-foot">
+          {existing && <button className="btn btn-ghost" style={{color:'var(--red)'}} onClick={onRemove}>Quitar turno</button>}
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={()=>onSave({start,end})} disabled={!valid}>Guardar</button>
+        </div>
+      </div>
+    </div>
+    </Portal>
+  );
+}
+
+function StaffModal({ staff, onClose, onSave, onDelete }) {
+  const [f, setF] = useState(() => ({
+    name: staff?.name || '', role: staff?.role || STAFF_ROLES[0], area: staff?.area || '',
+    weeklyHours: staff?.weeklyHours ?? 38, vacationTotal: staff?.vacationTotal ?? 23,
+    visibility: staff?.visibility || 'own',
+  }));
+  const set = (k,v) => setF(p=>({...p,[k]:v}));
+  const valid = f.name.trim().length > 0;
+  const palette = ['#3f6f8c','#8c7444','#3f7d6e','#8a5f74','#3f83a1','#5f7488','#a8792f','#94a2b0'];
+
+  const submit = () => {
+    if (!valid) return;
+    const init = f.name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    const color = staff?.color || palette[Math.floor(Math.random()*palette.length)];
+    onSave({ name:f.name.trim(), role:f.role.trim()||STAFF_ROLES[0], area:f.area.trim(), weeklyHours:Number(f.weeklyHours)||38, vacationTotal:Number(f.vacationTotal)||23, visibility:f.visibility, init, color });
+  };
+
+  return (
+    <Portal>
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{width:480}}>
+        <div className="modal-head"><h3>{I.plus} {staff?'Editar empleado':'Nuevo empleado'}</h3></div>
+        <div className="modal-body">
+          <div className="new-sample-grid">
+            <div className="field full"><label className="field-label">Nombre *</label><input className="field-input" value={f.name} onChange={e=>set('name',e.target.value)} autoFocus/></div>
+            <div className="field">
+              <label className="field-label">Rol</label>
+              <input className="field-input" list="staffroles-dl" value={f.role} onChange={e=>set('role',e.target.value)}/>
+              <datalist id="staffroles-dl">{STAFF_ROLES.map(r=><option key={r} value={r}/>)}</datalist>
+            </div>
+            <div className="field"><label className="field-label">Área (opcional)</label><input className="field-input" value={f.area} onChange={e=>set('area',e.target.value)}/></div>
+            <div className="field"><label className="field-label">Horas semanales</label><input className="field-input" type="number" min="1" value={f.weeklyHours} onChange={e=>set('weeklyHours',e.target.value)}/></div>
+            <div className="field"><label className="field-label">Días de vacaciones/año</label><input className="field-input" type="number" min="0" value={f.vacationTotal} onChange={e=>set('vacationTotal',e.target.value)}/></div>
+            <div className="field full">
+              <label className="field-label">Horario de compañeros que puede ver</label>
+              <select className="field-input" value={f.visibility} onChange={e=>set('visibility',e.target.value)}>
+                <option value="own">Solo el suyo</option>
+                <option value="team">El de su mismo rol</option>
+                <option value="all">El de todo el laboratorio</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="modal-foot">
+          {onDelete && <button className="btn btn-ghost" style={{color:'var(--red)'}} onClick={onDelete}>Eliminar</button>}
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!valid}>{staff?'Guardar cambios':'Crear empleado'}</button>
+        </div>
+      </div>
+    </div>
+    </Portal>
+  );
+}
+
+function ScheduleGridAdmin({ staff, shifts, setShift, removeShift, onNewStaff, onEditStaff }) {
+  const [editing, setEditing] = useState(null); // {staffId, day} | null
+  const shiftFor = (staffId, day) => shifts.find(s=>s.staffId===staffId && s.day===day);
+  const weeklyTotal = (staffId) => shifts.filter(s=>s.staffId===staffId).reduce((a,s)=>a+shiftHours(s),0);
+  const editingStaff = editing && staff.find(s=>s.id===editing.staffId);
+
+  return (
+    <>
+    <div className="card">
+      <div className="card-head" style={{padding:'12px 16px'}}>
+        <h3>Horario semanal</h3>
+        <div className="card-actions"><button className="btn btn-primary btn-sm" onClick={onNewStaff}>{I.plus} Añadir empleado</button></div>
+      </div>
+      <div className="tbl-wrap">
+        <table className="tbl wk-grid">
+          <thead><tr><th>Empleado</th>{DOW_LABELS.map((d,i)=><th key={i}>{d}</th>)}<th>Total semana</th></tr></thead>
+          <tbody>
+            {staff.map(s=>{
+              const total = weeklyTotal(s.id);
+              const over = total > s.weeklyHours;
+              return (
+                <tr key={s.id}>
+                  <td>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div className="wl-av" style={{background:s.color,width:26,height:26,fontSize:10.5,flexShrink:0}}>{s.init}</div>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:600,fontSize:12.5}}>{s.name}</div>
+                        <div style={{fontSize:10.5,color:'var(--text-3)'}}>{s.role}</div>
+                      </div>
+                      <button className="icon-btn-sm" title="Editar empleado" aria-label={`Editar ${s.name}`} onClick={()=>onEditStaff(s)}><Ico d={<><path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></>} size={12}/></button>
+                    </div>
+                  </td>
+                  {[0,1,2,3,4,5,6].map(day=>{
+                    const sh = shiftFor(s.id, day);
+                    return (
+                      <td key={day} onClick={()=>setEditing({staffId:s.id, day})} style={{cursor:'pointer'}}>
+                        {sh ? <span className="wk-chip" style={{background:s.color+'22',color:s.color}}>{sh.start}–{sh.end}</span> : <span className="wk-empty">+</span>}
+                      </td>
+                    );
+                  })}
+                  <td style={{fontWeight:700,color:over?'var(--red)':'var(--text)'}}>{total}h / {s.weeklyHours}h</td>
+                </tr>
+              );
+            })}
+            {staff.length===0 && <tr><td colSpan={9} style={{textAlign:'center',color:'var(--text-3)',padding:'18px 0'}}>Añade el primer empleado para empezar a asignar horas.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {editing && (
+      <ShiftEditModal staffId={editing.staffId} day={editing.day} staffName={editingStaff?.name} existing={shiftFor(editing.staffId, editing.day)}
+        onSave={(patch)=>{ setShift(editing.staffId, editing.day, patch); setEditing(null); }}
+        onRemove={()=>{ removeShift(editing.staffId, editing.day); setEditing(null); }}
+        onClose={()=>setEditing(null)} />
+    )}
+    </>
+  );
+}
+
+function ScheduleGridEmployee({ staff, shifts, viewingStaff }) {
+  const visible = visibleColleagues(staff, viewingStaff);
+  const shiftFor = (staffId, day) => shifts.find(s=>s.staffId===staffId && s.day===day);
+  const scopeLabel = viewingStaff?.visibility==='all' ? 'Ves el horario de todo el laboratorio, tal y como te ha dado acceso tu administrador.'
+    : viewingStaff?.visibility==='team' ? `Ves el horario de ${viewingStaff.role}, tal y como te ha dado acceso tu administrador.`
+    : 'Tu administrador todavía no te ha dado acceso al horario de tus compañeros — solo ves el tuyo.';
+
+  return (
+    <div className="card">
+      <div className="card-head" style={{padding:'12px 16px'}}>
+        <h3>Horario semanal</h3>
+        <div className="card-actions"><span style={{fontSize:11.5,color:'var(--text-3)'}}>{scopeLabel}</span></div>
+      </div>
+      <div className="tbl-wrap">
+        <table className="tbl wk-grid">
+          <thead><tr><th>Empleado</th>{DOW_LABELS.map((d,i)=><th key={i}>{d}</th>)}</tr></thead>
+          <tbody>
+            {visible.map(s=>(
+              <tr key={s.id} style={s.id===viewingStaff?.id ? {background:'var(--brand-50)'} : undefined}>
+                <td>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <div className="wl-av" style={{background:s.color,width:26,height:26,fontSize:10.5,flexShrink:0}}>{s.init}</div>
+                    <div><div style={{fontWeight:600,fontSize:12.5}}>{s.name}{s.id===viewingStaff?.id?' (tú)':''}</div><div style={{fontSize:10.5,color:'var(--text-3)'}}>{s.role}</div></div>
+                  </div>
+                </td>
+                {[0,1,2,3,4,5,6].map(day=>{
+                  const sh = shiftFor(s.id, day);
+                  return <td key={day}>{sh ? <span className="wk-chip" style={{background:s.color+'22',color:s.color}}>{sh.start}–{sh.end}</span> : <span style={{color:'var(--text-3)'}}>—</span>}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RequestsInboxAdmin({ staff, staffRequests, decideStaffRequest }) {
+  const pending = staffRequests.filter(r=>r.status==='pendiente');
+  const history = staffRequests.filter(r=>r.status!=='pendiente');
+  const nameFor = (id) => staff.find(s=>s.id===id)?.name || 'Empleado';
+
+  return (
+    <div>
+      <div className="section-title" style={{marginTop:0}}>Bandeja de peticiones{pending.length?` (${pending.length})`:''}</div>
+      {pending.length===0 && <div className="card" style={{marginBottom:18}}><div style={{padding:16,fontSize:13,color:'var(--text-3)'}}>No hay peticiones pendientes ahora mismo.</div></div>}
+      {pending.length>0 && (
+        <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:18}}>
+          {pending.map(r=>(
+            <div className="card" key={r.id}>
+              <div style={{padding:'14px 16px',display:'flex',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
+                <div style={{flex:'1 1 220px'}}>
+                  <span className="tipo-tag" style={{background:REQUEST_TYPES[r.type].color+'22',color:REQUEST_TYPES[r.type].color}}>{REQUEST_TYPES[r.type].label}</span>
+                  <div style={{fontWeight:700,marginTop:6,fontSize:13.5}}>{nameFor(r.staffId)}</div>
+                  <div style={{fontSize:12.5,color:'var(--text-2)'}}>{r.startDate}{r.endDate && r.endDate!==r.startDate ? ` → ${r.endDate}` : ''}</div>
+                  {r.reason && <div style={{fontSize:12.5,color:'var(--text-2)',marginTop:4}}>{r.reason}</div>}
+                </div>
+                <div style={{display:'flex',gap:6}}>
+                  <button className="btn btn-soft btn-sm" onClick={()=>decideStaffRequest(r.id,'aprobada')}>Aprobar</button>
+                  <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={()=>decideStaffRequest(r.id,'rechazada')}>Rechazar</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="section-title">Historial</div>
+      <div className="card" style={{marginBottom:18}}>
+        {history.length===0 && <div style={{padding:16,fontSize:13,color:'var(--text-3)'}}>Todavía no hay historial.</div>}
+        {history.map(r=>(
+          <div key={r.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+            <span className="tipo-tag" style={{background:REQUEST_TYPES[r.type].color+'22',color:REQUEST_TYPES[r.type].color}}>{REQUEST_TYPES[r.type].label}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:12.5}}>{nameFor(r.staffId)}</div>
+              <div style={{fontSize:11.5,color:'var(--text-3)'}}>{r.startDate}{r.endDate && r.endDate!==r.startDate ? ` → ${r.endDate}` : ''}</div>
+            </div>
+            <span className="status-pill" style={{background:REQUEST_STATUS[r.status].bg,color:REQUEST_STATUS[r.status].fg}}>{REQUEST_STATUS[r.status].label}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="section-title">Calendario de ausencias del equipo</div>
+      <TeamAbsenceCalendar staff={staff} staffRequests={staffRequests} />
+    </div>
+  );
+}
+
+function RequestsEmployee({ viewingStaff, staffRequests, addStaffRequest }) {
+  const [type, setType] = useState('vacaciones');
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  const [reason, setReason] = useState('');
+
+  const myRequests = staffRequests.filter(r=>r.staffId===viewingStaff.id);
+  const usedDays = myRequests.filter(r=>r.status==='aprobada' && r.type==='vacaciones')
+    .reduce((sum,r)=>sum+expandDateRange(r.startDate, r.endDate||r.startDate).length, 0);
+  const remaining = Math.max(0, viewingStaff.vacationTotal - usedDays);
+
+  const markedDates = new Map();
+  myRequests.filter(r=>r.status==='aprobada').forEach(r=>{
+    expandDateRange(r.startDate, r.endDate||r.startDate).forEach(iso=>markedDates.set(iso, REQUEST_TYPES[r.type].color));
+  });
+
+  const needsReason = type==='cambio_turno';
+  const valid = startDate && (!needsReason || reason.trim());
+
+  const submit = () => {
+    if (!valid) return;
+    addStaffRequest({ staffId: viewingStaff.id, type, startDate, endDate: endDate||startDate, reason: reason.trim() });
+    setStartDate(null); setEndDate(null); setReason('');
+  };
+
+  return (
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,maxWidth:420,marginBottom:20}}>
+        <div className="mini-stat"><div className="ms-num" style={{color:'var(--green)'}}>{remaining}<span style={{fontSize:14,fontWeight:500,color:'var(--text-3)'}}> / {viewingStaff.vacationTotal}</span></div><div className="ms-label">Días de vacaciones disponibles</div></div>
+        <div className="mini-stat"><div className="ms-num">{usedDays}</div><div className="ms-label">Días ya cogidos este año</div></div>
+      </div>
+
+      <div className="section-title" style={{marginTop:0}}>Nueva petición</div>
+      <div className="card" style={{padding:16,marginBottom:20}}>
+        <div className="tipo-seg" style={{marginBottom:14,gridTemplateColumns:'repeat(3,1fr)'}}>
+          {Object.keys(REQUEST_TYPES).map(k=>(
+            <button type="button" key={k} className={type===k?'on':''} onClick={()=>setType(k)}>
+              <span className="ts-label">{REQUEST_TYPES[k].label}</span>
+            </button>
+          ))}
+        </div>
+        <RangeCalendar startDate={startDate} endDate={endDate} onChange={(s,e)=>{setStartDate(s); setEndDate(e);}} color={REQUEST_TYPES[type].color} markedDates={markedDates}/>
+        <div className="field" style={{marginTop:14,marginBottom:0}}>
+          <label className="field-label">{needsReason ? 'Con quién y qué cambio propones *' : 'Motivo (opcional)'}</label>
+          <textarea className="field-input" rows={2} value={reason} onChange={e=>setReason(e.target.value)} placeholder={needsReason ? 'p. ej. Cambiar mi turno del jueves con Pau Martí' : ''}/>
+        </div>
+        <button className="btn btn-primary" style={{marginTop:12}} onClick={submit} disabled={!valid}>{I.plus} Enviar petición</button>
+      </div>
+
+      <div className="section-title">Mis solicitudes</div>
+      <div className="card">
+        {myRequests.length===0 && <div style={{padding:16,fontSize:13,color:'var(--text-3)'}}>Todavía no has enviado ninguna petición.</div>}
+        {myRequests.map(r=>(
+          <div key={r.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+            <span className="tipo-tag" style={{background:REQUEST_TYPES[r.type].color+'22',color:REQUEST_TYPES[r.type].color}}>{REQUEST_TYPES[r.type].label}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12.5}}>{r.startDate}{r.endDate && r.endDate!==r.startDate ? ` → ${r.endDate}` : ''}</div>
+              {r.reason && <div style={{fontSize:11.5,color:'var(--text-3)'}}>{r.reason}</div>}
+            </div>
+            <span className="status-pill" style={{background:REQUEST_STATUS[r.status].bg,color:REQUEST_STATUS[r.status].fg}}>{REQUEST_STATUS[r.status].label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Personal({ staff, addStaffMember, updateStaffMember, deleteStaffMember, shifts, setShift, removeShift, staffRequests, addStaffRequest, decideStaffRequest, showToast }) {
+  const [role, setRole] = useState('admin'); // 'admin' | 'employee' — simula "entrar como", no hay login real
+  const [viewingStaffId, setViewingStaffId] = useState(staff[0]?.id || null);
+  const [tab, setTab] = useState('schedule'); // 'schedule' | 'requests'
+  const [staffModal, setStaffModal] = useState(null); // null | 'new' | objeto empleado
+
+  const viewingStaff = staff.find(s=>s.id===viewingStaffId) || staff[0] || null;
+  const pendingCount = staffRequests.filter(r=>r.status==='pendiente').length;
+
+  return (
+    <div>
+      <div className="page-head">
+        <div>
+          <h1>Personal</h1>
+          <p>Horario semanal del equipo y buzón de vacaciones/cambios — inspirado en el portal de empleados real</p>
+        </div>
+        <div className="page-head-actions">
+          <div className="seg">
+            <button className={role==='admin'?'on':''} onClick={()=>setRole('admin')}>Vista administrador</button>
+            <button className={role==='employee'?'on':''} onClick={()=>setRole('employee')}>Vista empleado</button>
+          </div>
+        </div>
+      </div>
+
+      {role==='employee' && (
+        <div className="card" style={{marginBottom:16,padding:'10px 16px',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{fontSize:12.5,color:'var(--text-2)'}}>Viendo como:</span>
+          <select className="field-input" style={{maxWidth:260}} value={viewingStaffId||''} onChange={e=>setViewingStaffId(e.target.value)}>
+            {staff.map(s=><option key={s.id} value={s.id}>{s.name} · {s.role}</option>)}
+          </select>
+        </div>
+      )}
+
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-head" style={{padding:'12px 16px'}}>
+          <div className="seg">
+            <button className={tab==='schedule'?'on':''} onClick={()=>setTab('schedule')}>Horario semanal</button>
+            <button className={tab==='requests'?'on':''} onClick={()=>setTab('requests')}>Vacaciones y peticiones{role==='admin' && pendingCount?` (${pendingCount})`:''}</button>
+          </div>
+        </div>
+      </div>
+
+      {!viewingStaff ? (
+        <div className="card"><div className="empty"><div className="empty-ico">{I.calendar}</div><h3>Sin personal todavía</h3><p>Añade el primer empleado desde la vista de administrador.</p></div></div>
+      ) : tab==='schedule' ? (
+        role==='admin'
+          ? <ScheduleGridAdmin staff={staff} shifts={shifts} setShift={setShift} removeShift={removeShift} onNewStaff={()=>setStaffModal('new')} onEditStaff={(s)=>setStaffModal(s)} />
+          : <ScheduleGridEmployee staff={staff} shifts={shifts} viewingStaff={viewingStaff} />
+      ) : (
+        role==='admin'
+          ? <RequestsInboxAdmin staff={staff} staffRequests={staffRequests} decideStaffRequest={decideStaffRequest} />
+          : <RequestsEmployee viewingStaff={viewingStaff} staffRequests={staffRequests} addStaffRequest={addStaffRequest} />
+      )}
+
+      {staffModal && (
+        <StaffModal
+          staff={staffModal==='new' ? null : staffModal}
+          onClose={()=>setStaffModal(null)}
+          onSave={(data)=>{ if (staffModal==='new') addStaffMember(data); else updateStaffMember(staffModal.id, data); setStaffModal(null); }}
+          onDelete={staffModal!=='new' ? ()=>{ deleteStaffMember(staffModal.id); setStaffModal(null); } : null}
+        />
+      )}
+    </div>
   );
 }
 
