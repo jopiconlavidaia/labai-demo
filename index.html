@@ -812,7 +812,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useRef, useMemo, useCallback } = React;
+const { useState, useEffect, useRef, useMemo, useCallback, useContext } = React;
 
 /* ════════════════ ICONS ════════════════ */
 const Ico = ({ d, size=18, sw=1.9 }) => (
@@ -1233,9 +1233,176 @@ Reglas:
 - Si una pregunta excede el contexto del laboratorio, indícalo y reconduce.
 - Nunca inventes códigos SNOMED ni datos de pacientes que no se te hayan dado.`;
 
+/* ════════════════ IDIOMA (ES / CA / EN) ════════════════
+   Primera pasada: navegación + Panel + Muestras + Clientes + Administración
+   (lo acordado). El resto de la app sigue en español por ahora — se amplía
+   en próximas rondas sin romper nada de lo ya traducido. */
+const LANGS = { es:'Castellano', ca:'Català', en:'English' };
+const I18N = {
+  es: {
+    'nav.group.lab':'Laboratorio', 'nav.group.ai':'Inteligencia IA', 'nav.group.mgmt':'Gestión',
+    'nav.dashboard':'Panel general', 'nav.samples':'Muestras', 'nav.reports':'Informes', 'nav.archive':'Archivo histórico',
+    'nav.chat':'Asistente IA', 'nav.analyze':'Análisis IA',
+    'nav.clients':'Clientes y tarifas', 'nav.admin':'Administración', 'nav.quality':'Calidad', 'nav.team':'Equipo', 'nav.settings':'Configuración',
+    'topbar.search':'Buscar muestra, paciente, referencia...',
+    'topbar.guide':'Guía', 'topbar.guideTitle':'Ver guía de uso',
+    'topbar.aiOn':'IA activa', 'topbar.aiOff':'Modo demostración',
+    'topbar.aiOnTitle':'Motor de IA respondiendo', 'topbar.aiOffTitle':'IA sin respuesta ahora mismo: mostrando modo demostración',
+    'topbar.menu':'Abrir menú',
+    'topbar.notifications':'Notificaciones', 'topbar.seeAllLog':'Ver registro completo →',
+    'topbar.teamItem':'Equipo del laboratorio', 'topbar.settingsItem':'Configuración',
+    'dash.greeting':'Bon dia, Dra. Vendrell',
+    'dash.youHave':'Tienes', 'dash.urgentPendingSg':'caso urgente pendiente de diagnóstico', 'dash.urgentPendingPl':'casos urgentes pendientes de diagnóstico',
+    'dash.samplesInProgress':'muestras en proceso',
+    'dash.auditBtn':'Ver auditoría', 'dash.newSample':'Nueva muestra',
+    'dash.statActive':'Muestras activas', 'dash.statUrgent':'Casos urgentes', 'dash.statProgress':'En proceso', 'dash.statValidated':'Validadas (mes)',
+    'dash.trendToday':'+3 hoy', 'dash.trendPriority':'Prioridad', 'dash.trendOngoing':'En curso', 'dash.trendUp':'+12%',
+    'dash.workload':'Carga de trabajo por patólogo', 'dash.assignedToday':'Casos asignados hoy', 'dash.cases':'casos',
+    'dash.bySpecialty':'Distribución por especialidad', 'dash.samplesWord':'MUESTRAS',
+    'dash.recentActivity':'Actividad reciente', 'dash.seeAll':'Ver todo',
+    'samples.title':'Muestras', 'samples.sampleSg':'muestra', 'samples.samplePl':'muestras', 'samples.resultsFor':'resultados para', 'samples.fullTraceability':'trazabilidad completa en tiempo real',
+    'samples.printLabels':'Imprimir etiquetas', 'samples.newSample':'Nueva muestra',
+    'samples.flow':'Flujo', 'samples.table':'Tabla', 'samples.all':'Todas',
+    'samples.numPlaceholder':'Nº de muestra: 921, 921-926…',
+    'samples.allStates':'Todos los estados', 'samples.allClients':'Todos los clientes / mútuas', 'samples.clearFilters':'Limpiar filtros',
+    'samples.colCode':'Código','samples.colType':'Tipo','samples.colSample':'Muestra','samples.colPatient':'Paciente','samples.colClient':'Cliente / mútua','samples.colSpec':'Especialidad','samples.colState':'Estado','samples.colReceived':'Recepción',
+    'samples.emptyTitle':'Sin resultados', 'samples.emptyDesc':'No hay muestras que coincidan con los filtros o la búsqueda actual.', 'samples.clearSearch':'Limpiar búsqueda',
+    'samples.noneInCol':'Sin muestras',
+    'clients.title':'Clientes y tarifas', 'clients.subtitle':'Condiciones diferenciadas por cliente · descuentos y tarifas por tipo de muestra, editables por el propio laboratorio',
+    'clients.new':'Nuevo cliente',
+    'clients.statTotal':'Clientes registrados','clients.statActive':'Con muestras activas','clients.statLinked':'Muestras vinculadas','clients.statDiscount':'Descuento medio',
+    'clients.emptyTitle':'Sin clientes todavía', 'clients.emptyDesc':'Añade el primer hospital, clínica o mútua con «Nuevo cliente».',
+    'clients.docsNone':'Sin ofertas, pedidos ni facturas todavía','clients.doc':'documento','clients.docs':'documentos','clients.docPendingSg':'pendiente','clients.docPendingPl':'pendientes',
+    'clients.viewDocs':'Ver documentos','clients.newDoc':'Nuevo documento',
+    'admin.title':'Administración','admin.subtitle':'Ofertas, pedidos, albaranes, facturas y proformas, ligados a clientes y muestras reales',
+    'admin.newPrefix':'Nuevo/a', 'admin.searchPlaceholder':'Buscar código, cliente, notas…',
+    'admin.allClients':'Todos los clientes / mútuas','admin.allStates':'Todos los estados',
+    'admin.colCode':'Código','admin.colClient':'Cliente','admin.colDate':'Fecha','admin.colLines':'Líneas','admin.colTotal':'Total','admin.colState':'Estado',
+    'admin.emptyTitlePrefix':'Sin','admin.emptyDescTpl':'Crea el primero con «Nuevo/a %s».',
+    'states.recibida':'Recepción','states.tallado':'Inclusión','states.procesando':'Procesamiento','states.diagnostico':'Diagnóstico','states.validado':'Validado',
+    'docType.oferta.label':'Oferta','docType.oferta.plural':'Ofertas',
+    'docType.pedido.label':'Pedido','docType.pedido.plural':'Pedidos',
+    'docType.albaran.label':'Albarán','docType.albaran.plural':'Albaranes',
+    'docType.factura.label':'Factura','docType.factura.plural':'Facturas',
+    'docType.proforma.label':'Proforma','docType.proforma.plural':'Proformas',
+    'docStatus.borrador':'Borrador','docStatus.enviada':'Enviada','docStatus.aceptada':'Aceptada','docStatus.rechazada':'Rechazada',
+    'docStatus.pendiente':'Pendiente','docStatus.confirmado':'Confirmado','docStatus.completado':'Completado','docStatus.cancelado':'Cancelado',
+    'docStatus.entregado':'Entregado','docStatus.emitida':'Emitida','docStatus.pagada':'Pagada','docStatus.vencida':'Vencida',
+  },
+  ca: {
+    'nav.group.lab':'Laboratori', 'nav.group.ai':'Intel·ligència IA', 'nav.group.mgmt':'Gestió',
+    'nav.dashboard':'Panell general', 'nav.samples':'Mostres', 'nav.reports':'Informes', 'nav.archive':'Arxiu històric',
+    'nav.chat':'Assistent IA', 'nav.analyze':'Anàlisi IA',
+    'nav.clients':'Clients i tarifes', 'nav.admin':'Administració', 'nav.quality':'Qualitat', 'nav.team':'Equip', 'nav.settings':'Configuració',
+    'topbar.search':'Cerca mostra, pacient, referència...',
+    'topbar.guide':'Guia', 'topbar.guideTitle':"Veure guia d'ús",
+    'topbar.aiOn':'IA activa', 'topbar.aiOff':'Mode demostració',
+    'topbar.aiOnTitle':"Motor d'IA responent", 'topbar.aiOffTitle':'IA sense resposta ara mateix: mostrant mode demostració',
+    'topbar.menu':'Obrir menú',
+    'topbar.notifications':'Notificacions', 'topbar.seeAllLog':'Veure registre complet →',
+    'topbar.teamItem':'Equip del laboratori', 'topbar.settingsItem':'Configuració',
+    'dash.greeting':'Bon dia, Dra. Vendrell',
+    'dash.youHave':'Tens', 'dash.urgentPendingSg':'cas urgent pendent de diagnòstic', 'dash.urgentPendingPl':'casos urgents pendents de diagnòstic',
+    'dash.samplesInProgress':'mostres en procés',
+    'dash.auditBtn':'Veure auditoria', 'dash.newSample':'Nova mostra',
+    'dash.statActive':'Mostres actives', 'dash.statUrgent':'Casos urgents', 'dash.statProgress':'En procés', 'dash.statValidated':'Validades (mes)',
+    'dash.trendToday':'+3 avui', 'dash.trendPriority':'Prioritat', 'dash.trendOngoing':'En curs', 'dash.trendUp':'+12%',
+    'dash.workload':'Càrrega de treball per patòleg', 'dash.assignedToday':'Casos assignats avui', 'dash.cases':'casos',
+    'dash.bySpecialty':'Distribució per especialitat', 'dash.samplesWord':'MOSTRES',
+    'dash.recentActivity':'Activitat recent', 'dash.seeAll':'Veure-ho tot',
+    'samples.title':'Mostres', 'samples.sampleSg':'mostra', 'samples.samplePl':'mostres', 'samples.resultsFor':'resultats per a', 'samples.fullTraceability':'traçabilitat completa en temps real',
+    'samples.printLabels':'Imprimir etiquetes', 'samples.newSample':'Nova mostra',
+    'samples.flow':'Flux', 'samples.table':'Taula', 'samples.all':'Totes',
+    'samples.numPlaceholder':'Núm. de mostra: 921, 921-926…',
+    'samples.allStates':'Tots els estats', 'samples.allClients':'Tots els clients / mútues', 'samples.clearFilters':'Netejar filtres',
+    'samples.colCode':'Codi','samples.colType':'Tipus','samples.colSample':'Mostra','samples.colPatient':'Pacient','samples.colClient':'Client / mútua','samples.colSpec':'Especialitat','samples.colState':'Estat','samples.colReceived':'Recepció',
+    'samples.emptyTitle':'Sense resultats', 'samples.emptyDesc':'No hi ha mostres que coincideixin amb els filtres o la cerca actual.', 'samples.clearSearch':'Netejar cerca',
+    'samples.noneInCol':'Sense mostres',
+    'clients.title':'Clients i tarifes', 'clients.subtitle':'Condicions diferenciades per client · descomptes i tarifes per tipus de mostra, editables pel mateix laboratori',
+    'clients.new':'Nou client',
+    'clients.statTotal':'Clients registrats','clients.statActive':'Amb mostres actives','clients.statLinked':'Mostres vinculades','clients.statDiscount':'Descompte mitjà',
+    'clients.emptyTitle':'Encara no hi ha clients', 'clients.emptyDesc':'Afegeix el primer hospital, clínica o mútua amb «Nou client».',
+    'clients.docsNone':'Encara no hi ha ofertes, comandes ni factures','clients.doc':'document','clients.docs':'documents','clients.docPendingSg':'pendent','clients.docPendingPl':'pendents',
+    'clients.viewDocs':'Veure documents','clients.newDoc':'Nou document',
+    'admin.title':'Administració','admin.subtitle':'Ofertes, comandes, albarans, factures i proformes, lligats a clients i mostres reals',
+    'admin.newPrefix':'Nou/nova', 'admin.searchPlaceholder':'Cerca codi, client, notes…',
+    'admin.allClients':'Tots els clients / mútues','admin.allStates':'Tots els estats',
+    'admin.colCode':'Codi','admin.colClient':'Client','admin.colDate':'Data','admin.colLines':'Línies','admin.colTotal':'Total','admin.colState':'Estat',
+    'admin.emptyTitlePrefix':'Sense','admin.emptyDescTpl':'Crea el primer amb «Nou/nova %s».',
+    'states.recibida':'Recepció','states.tallado':'Inclusió','states.procesando':'Processament','states.diagnostico':'Diagnòstic','states.validado':'Validat',
+    'docType.oferta.label':'Oferta','docType.oferta.plural':'Ofertes',
+    'docType.pedido.label':'Comanda','docType.pedido.plural':'Comandes',
+    'docType.albaran.label':'Albarà','docType.albaran.plural':'Albarans',
+    'docType.factura.label':'Factura','docType.factura.plural':'Factures',
+    'docType.proforma.label':'Proforma','docType.proforma.plural':'Proformes',
+    'docStatus.borrador':'Esborrany','docStatus.enviada':'Enviada','docStatus.aceptada':'Acceptada','docStatus.rechazada':'Rebutjada',
+    'docStatus.pendiente':'Pendent','docStatus.confirmado':'Confirmada','docStatus.completado':'Completat','docStatus.cancelado':'Cancel·lada',
+    'docStatus.entregado':'Lliurat','docStatus.emitida':'Emesa','docStatus.pagada':'Pagada','docStatus.vencida':'Vençuda',
+  },
+  en: {
+    'nav.group.lab':'Laboratory', 'nav.group.ai':'AI Intelligence', 'nav.group.mgmt':'Management',
+    'nav.dashboard':'Dashboard', 'nav.samples':'Samples', 'nav.reports':'Reports', 'nav.archive':'Archive',
+    'nav.chat':'AI Assistant', 'nav.analyze':'AI Analysis',
+    'nav.clients':'Clients & Rates', 'nav.admin':'Administration', 'nav.quality':'Quality', 'nav.team':'Team', 'nav.settings':'Settings',
+    'topbar.search':'Search sample, patient, reference...',
+    'topbar.guide':'Guide', 'topbar.guideTitle':'View usage guide',
+    'topbar.aiOn':'AI active', 'topbar.aiOff':'Demo mode',
+    'topbar.aiOnTitle':'AI engine responding', 'topbar.aiOffTitle':'AI not responding right now: showing demo mode',
+    'topbar.menu':'Open menu',
+    'topbar.notifications':'Notifications', 'topbar.seeAllLog':'View full log →',
+    'topbar.teamItem':'Lab team', 'topbar.settingsItem':'Settings',
+    'dash.greeting':'Good morning, Dr. Vendrell',
+    'dash.youHave':'You have', 'dash.urgentPendingSg':'urgent case pending diagnosis', 'dash.urgentPendingPl':'urgent cases pending diagnosis',
+    'dash.samplesInProgress':'samples in progress',
+    'dash.auditBtn':'View audit log', 'dash.newSample':'New sample',
+    'dash.statActive':'Active samples', 'dash.statUrgent':'Urgent cases', 'dash.statProgress':'In progress', 'dash.statValidated':'Validated (month)',
+    'dash.trendToday':'+3 today', 'dash.trendPriority':'Priority', 'dash.trendOngoing':'Ongoing', 'dash.trendUp':'+12%',
+    'dash.workload':'Workload by pathologist', 'dash.assignedToday':'Cases assigned today', 'dash.cases':'cases',
+    'dash.bySpecialty':'Distribution by specialty', 'dash.samplesWord':'SAMPLES',
+    'dash.recentActivity':'Recent activity', 'dash.seeAll':'See all',
+    'samples.title':'Samples', 'samples.sampleSg':'sample', 'samples.samplePl':'samples', 'samples.resultsFor':'results for', 'samples.fullTraceability':'full real-time traceability',
+    'samples.printLabels':'Print labels', 'samples.newSample':'New sample',
+    'samples.flow':'Flow', 'samples.table':'Table', 'samples.all':'All',
+    'samples.numPlaceholder':'Sample no.: 921, 921-926…',
+    'samples.allStates':'All states', 'samples.allClients':'All clients / insurers', 'samples.clearFilters':'Clear filters',
+    'samples.colCode':'Code','samples.colType':'Type','samples.colSample':'Sample','samples.colPatient':'Patient','samples.colClient':'Client / insurer','samples.colSpec':'Specialty','samples.colState':'Status','samples.colReceived':'Received',
+    'samples.emptyTitle':'No results', 'samples.emptyDesc':'No samples match the current filters or search.', 'samples.clearSearch':'Clear search',
+    'samples.noneInCol':'No samples',
+    'clients.title':'Clients & Rates', 'clients.subtitle':'Client-specific terms · discounts and rates by sample type, editable by the lab itself',
+    'clients.new':'New client',
+    'clients.statTotal':'Registered clients','clients.statActive':'With active samples','clients.statLinked':'Linked samples','clients.statDiscount':'Average discount',
+    'clients.emptyTitle':'No clients yet', 'clients.emptyDesc':'Add the first hospital, clinic or insurer with «New client».',
+    'clients.docsNone':'No quotes, orders or invoices yet','clients.doc':'document','clients.docs':'documents','clients.docPendingSg':'pending','clients.docPendingPl':'pending',
+    'clients.viewDocs':'View documents','clients.newDoc':'New document',
+    'admin.title':'Administration','admin.subtitle':'Quotes, orders, delivery notes, invoices and proformas, linked to real clients and samples',
+    'admin.newPrefix':'New', 'admin.searchPlaceholder':'Search code, client, notes…',
+    'admin.allClients':'All clients / insurers','admin.allStates':'All states',
+    'admin.colCode':'Code','admin.colClient':'Client','admin.colDate':'Date','admin.colLines':'Lines','admin.colTotal':'Total','admin.colState':'Status',
+    'admin.emptyTitlePrefix':'No','admin.emptyDescTpl':'Create the first one with «New %s».',
+    'states.recibida':'Reception','states.tallado':'Grossing','states.procesando':'Processing','states.diagnostico':'Diagnosis','states.validado':'Validated',
+    'docType.oferta.label':'Quote','docType.oferta.plural':'Quotes',
+    'docType.pedido.label':'Order','docType.pedido.plural':'Orders',
+    'docType.albaran.label':'Delivery note','docType.albaran.plural':'Delivery notes',
+    'docType.factura.label':'Invoice','docType.factura.plural':'Invoices',
+    'docType.proforma.label':'Proforma','docType.proforma.plural':'Proformas',
+    'docStatus.borrador':'Draft','docStatus.enviada':'Sent','docStatus.aceptada':'Accepted','docStatus.rechazada':'Rejected',
+    'docStatus.pendiente':'Pending','docStatus.confirmado':'Confirmed','docStatus.completado':'Completed','docStatus.cancelado':'Cancelled',
+    'docStatus.entregado':'Delivered','docStatus.emitida':'Issued','docStatus.pagada':'Paid','docStatus.vencida':'Overdue',
+  },
+};
+const LangContext = React.createContext({ lang:'es', setLang:()=>{}, t:(k)=>I18N.es[k]??k });
+const useT = () => useContext(LangContext);
+const docTypeLabel = (lang, type) => I18N[lang]?.[`docType.${type}.label`] ?? I18N.es[`docType.${type}.label`];
+const docTypePlural = (lang, type) => I18N[lang]?.[`docType.${type}.plural`] ?? I18N.es[`docType.${type}.plural`];
+const docStatusLabel = (lang, status) => I18N[lang]?.[`docStatus.${status}`] ?? I18N.es[`docStatus.${status}`] ?? status;
+const stateLabelT = (lang, state) => I18N[lang]?.[`states.${state}`] ?? I18N.es[`states.${state}`];
+
 /* ════════════════ ROOT ════════════════ */
 function App() {
   const [view, setView] = useState('dashboard');
+  const [lang, setLang] = useState(() => getStoredFlag('labai_lang') || 'es');
+  useEffect(() => { setStoredFlag('labai_lang', lang); }, [lang]);
+  const t = useCallback((key) => I18N[lang]?.[key] ?? I18N.es[key] ?? key, [lang]);
   // Sin gestión de clave personal: el laboratorio usa siempre el servidor de IA
   // compartido (PROXY_URL). No hay botón "Activar IA" ni clave que configurar.
   const apiKey = '';
@@ -1346,7 +1513,7 @@ function App() {
     setAdminDocs(prev => [doc, ...prev]);
     const sampleIds = (doc.lines||[]).map(l=>l.sampleId).filter(Boolean);
     if (sampleIds.length) setSamples(prev => prev.map(s => sampleIds.includes(s.id) ? { ...s, billingDocId: doc.id } : s));
-    showToast(`${DOC_TYPES[doc.type].label} ${doc.code} creado/a`);
+    showToast(`${docTypeLabel(lang, doc.type)} ${doc.code} creado/a`);
   };
   const updateAdminDoc = (id, patch) => setAdminDocs(prev => prev.map(d => d.id===id ? { ...d, ...patch } : d));
   const convertAdminDoc = (doc, toType) => {
@@ -1388,21 +1555,22 @@ function App() {
   };
 
   const titles = {
-    dashboard: ['Panel general'],
-    samples:   ['Muestras'],
-    chat:      ['Asistente IA'],
-    reports:   ['Informes'],
-    quality:   ['Calidad y trazabilidad'],
-    clients:   ['Clientes y tarifas'],
-    admin:     ['Administración'],
-    archive:   ['Archivo histórico'],
-    analyze:   ['Análisis IA'],
-    team:      ['Equipo'],
-    settings:  ['Configuración'],
+    dashboard: [t('nav.dashboard')],
+    samples:   [t('nav.samples')],
+    chat:      [t('nav.chat')],
+    reports:   [t('nav.reports')],
+    quality:   [t('nav.quality')],
+    clients:   [t('nav.clients')],
+    admin:     [t('nav.admin')],
+    archive:   [t('nav.archive')],
+    analyze:   [t('nav.analyze')],
+    team:      [t('nav.team')],
+    settings:  [t('nav.settings')],
   };
   const fullHeight = view==='chat' || view==='reports';
 
   return (
+    <LangContext.Provider value={{ lang, setLang, t }}>
     <div className="app">
       <Sidebar view={view} setView={setView} samples={samples} adminDocs={adminDocs} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       <div className="main">
@@ -1429,31 +1597,33 @@ function App() {
       {showGuide && <Onboarding onClose={closeGuide} goTo={setView} />}
       {toast && <div className="toast-wrap"><div className="toast">✓ {toast}</div></div>}
     </div>
+    </LangContext.Provider>
   );
 }
 
 /* ════════════════ SIDEBAR ════════════════ */
 function Sidebar({ view, setView, samples, adminDocs=[], mobileOpen, onCloseMobile }) {
+  const { t } = useT();
   const urgent = samples.filter(s => s.urgent && s.state !== 'validado').length;
   const validated = samples.filter(s => s.state === 'validado').length;
   const pendingDocs = adminDocs.filter(d => ['enviada','pendiente','borrador'].includes(d.status)).length;
   const nav = [
-    { group:'Laboratorio', items:[
-      { id:'dashboard', ico:I.dash, label:'Panel general' },
-      { id:'samples', ico:I.sample, label:'Muestras', badge: urgent ? {n:urgent, t:'red'} : null },
-      { id:'reports', ico:I.report, label:'Informes' },
-      { id:'archive', ico:I.archive, label:'Archivo histórico', badge: validated ? {n:validated, t:'ok'} : null },
+    { group:t('nav.group.lab'), items:[
+      { id:'dashboard', ico:I.dash, label:t('nav.dashboard') },
+      { id:'samples', ico:I.sample, label:t('nav.samples'), badge: urgent ? {n:urgent, t:'red'} : null },
+      { id:'reports', ico:I.report, label:t('nav.reports') },
+      { id:'archive', ico:I.archive, label:t('nav.archive'), badge: validated ? {n:validated, t:'ok'} : null },
     ]},
-    { group:'Inteligencia IA', items:[
-      { id:'chat', ico:I.ai, label:'Asistente IA' },
-      { id:'analyze', ico:I.analyze, label:'Análisis IA' },
+    { group:t('nav.group.ai'), items:[
+      { id:'chat', ico:I.ai, label:t('nav.chat') },
+      { id:'analyze', ico:I.analyze, label:t('nav.analyze') },
     ]},
-    { group:'Gestión', items:[
-      { id:'clients', ico:GL.building, label:'Clientes y tarifas' },
-      { id:'admin', ico:I.admin, label:'Administración', badge: pendingDocs ? {n:pendingDocs, t:'amber'} : null },
-      { id:'quality', ico:I.quality, label:'Calidad' },
-      { id:'team', ico:I.team, label:'Equipo' },
-      { id:'settings', ico:I.settings, label:'Configuración' },
+    { group:t('nav.group.mgmt'), items:[
+      { id:'clients', ico:GL.building, label:t('nav.clients') },
+      { id:'admin', ico:I.admin, label:t('nav.admin'), badge: pendingDocs ? {n:pendingDocs, t:'amber'} : null },
+      { id:'quality', ico:I.quality, label:t('nav.quality') },
+      { id:'team', ico:I.team, label:t('nav.team') },
+      { id:'settings', ico:I.settings, label:t('nav.settings') },
     ]},
   ];
 
@@ -1495,8 +1665,10 @@ function Sidebar({ view, setView, samples, adminDocs=[], mobileOpen, onCloseMobi
 
 /* ════════════════ TOPBAR ════════════════ */
 function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSearch, onNavigate, onToggleNav }) {
+  const { t, lang, setLang } = useT();
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
   const urgent = samples.filter(s=>s.urgent && s.state!=='validado');
   const notifs = [
     ...urgent.map(s=>({ ico:GL.alert, bg:'red', t:`Caso urgente: ${s.id}`, s:`${s.type} · ${s.patient}` })),
@@ -1505,21 +1677,37 @@ function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSe
   ];
   return (
     <header className="topbar">
-      <button className="icon-btn hamburger-btn" onClick={onToggleNav} aria-label="Abrir menú"><Ico d={<><path d="M3 6h18M3 12h18M3 18h18"/></>} size={18} sw={2}/></button>
+      <button className="icon-btn hamburger-btn" onClick={onToggleNav} aria-label={t('topbar.menu')}><Ico d={<><path d="M3 6h18M3 12h18M3 18h18"/></>} size={18} sw={2}/></button>
       <div className="breadcrumb">
         <span className="crumb-main">{title[0]}</span>
       </div>
       <form className="topbar-search" onSubmit={e=>{ e.preventDefault(); onSubmitSearch(search); }}>
         <span className="search-ico">{I.search}</span>
-        <input placeholder="Buscar muestra, paciente, referencia..." value={search} onChange={e=>setSearch(e.target.value)} />
+        <input placeholder={t('topbar.search')} value={search} onChange={e=>setSearch(e.target.value)} />
       </form>
       <div className="topbar-right">
-        <button className="ai-pill" onClick={onGuide} style={{padding:'0 12px'}} title="Ver guía de uso">
-          <span style={{fontWeight:800,color:'var(--brand-600)'}}>?</span> Guía
+        <div style={{position:'relative'}}>
+          <button className="ai-pill" onClick={()=>{setLangOpen(o=>!o); setNotifOpen(false); setUserOpen(false);}} style={{padding:'0 12px'}} title={LANGS[lang]}>
+            {I.world} {lang.toUpperCase()}
+          </button>
+          {langOpen && <Portal><div className="pop-backdrop" onClick={()=>setLangOpen(false)}/></Portal>}
+          {langOpen && (
+            <div className="popover" style={{width:170}}>
+              {Object.keys(LANGS).map(k=>(
+                <button key={k} className="pop-item" onClick={()=>{setLang(k); setLangOpen(false);}}>
+                  <span className="pop-ico" style={{background: k===lang?'var(--brand-50)':'#eef1f4', color: k===lang?'var(--brand-700)':'#5f7488', fontWeight:800}}>{k.toUpperCase()}</span>
+                  <span className="pop-t">{LANGS[k]}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button className="ai-pill" onClick={onGuide} style={{padding:'0 12px'}} title={t('topbar.guideTitle')}>
+          <span style={{fontWeight:800,color:'var(--brand-600)'}}>?</span> {t('topbar.guide')}
         </button>
-        <span className={`ai-pill status${aiLive?' on':''}`} title={aiLive?'Motor de IA respondiendo':'IA sin respuesta ahora mismo: mostrando modo demostración'}>
+        <span className={`ai-pill status${aiLive?' on':''}`} title={aiLive?t('topbar.aiOnTitle'):t('topbar.aiOffTitle')}>
           <span className="ai-dot"></span>
-          {aiLive ? 'IA activa' : 'Modo demostración'}
+          {aiLive ? t('topbar.aiOn') : t('topbar.aiOff')}
         </span>
         <div style={{position:'relative'}}>
           <button className="icon-btn" onClick={()=>{setNotifOpen(o=>!o); setUserOpen(false);}}>{urgent.length>0 && <span className="dot-alert"></span>}{I.bell}</button>
@@ -1528,7 +1716,7 @@ function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSe
           )}
           {notifOpen && (
             <div className="popover">
-              <div className="pop-head">Notificaciones <span className="pop-count">{notifs.length}</span></div>
+              <div className="pop-head">{t('topbar.notifications')} <span className="pop-count">{notifs.length}</span></div>
               <div className="pop-body">
                 {notifs.map((n,i)=>(
                   <button className="pop-item" key={i} onClick={()=>{ setNotifOpen(false); onNavigate('samples'); }}>
@@ -1537,7 +1725,7 @@ function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSe
                   </button>
                 ))}
               </div>
-              <button className="pop-foot" onClick={()=>{ setNotifOpen(false); onNavigate('quality'); }}>Ver registro completo →</button>
+              <button className="pop-foot" onClick={()=>{ setNotifOpen(false); onNavigate('quality'); }}>{t('topbar.seeAllLog')}</button>
             </div>
           )}
         </div>
@@ -1556,9 +1744,9 @@ function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSe
                 <div className="user-av" style={{width:42,height:42,fontSize:15}}>MV</div>
                 <div><div style={{fontWeight:700,fontSize:13.5}}>Dra. Marta Vendrell</div><div style={{fontSize:11.5,color:'var(--text-3)'}}>marta.vendrell@bcnpatolegs.com</div></div>
               </div>
-              <button className="pop-item" onClick={()=>{setUserOpen(false); onNavigate('team');}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)'}}>{I.team}</span><span className="pop-t">Equipo del laboratorio</span></button>
-              <button className="pop-item" onClick={()=>{setUserOpen(false); onNavigate('settings');}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)'}}>{I.settings}</span><span className="pop-t">Configuración</span></button>
-              <button className="pop-item" onClick={()=>{setUserOpen(false); onGuide();}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)',fontWeight:800}}>?</span><span className="pop-t">Ver guía de uso</span></button>
+              <button className="pop-item" onClick={()=>{setUserOpen(false); onNavigate('team');}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)'}}>{I.team}</span><span className="pop-t">{t('topbar.teamItem')}</span></button>
+              <button className="pop-item" onClick={()=>{setUserOpen(false); onNavigate('settings');}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)'}}>{I.settings}</span><span className="pop-t">{t('topbar.settingsItem')}</span></button>
+              <button className="pop-item" onClick={()=>{setUserOpen(false); onGuide();}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)',fontWeight:800}}>?</span><span className="pop-t">{t('topbar.guideTitle')}</span></button>
             </div>
           )}
         </div>
@@ -1569,6 +1757,7 @@ function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSe
 
 /* ════════════════ DASHBOARD ════════════════ */
 function Dashboard({ samples, specialties, setView, onNewSample }) {
+  const { t } = useT();
   const total = samples.length;
   const urgent = samples.filter(s=>s.urgent && s.state!=='validado').length;
   const inProc = samples.filter(s=>['tallado','procesando','diagnostico'].includes(s.state)).length;
@@ -1589,22 +1778,22 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
   const R = 54, C = 2*Math.PI*R;
 
   const stats = [
-    { ico:<Ico d={<><path d="M9 3h6M10 3v6.5L5.5 17a2 2 0 001.8 3h9.4a2 2 0 001.8-3L14 9.5V3"/><path d="M7.5 14h9"/></>}/>, bg:['var(--brand-50)','var(--brand-700)'], num:total, label:'Muestras activas', trend:'+3 hoy', tc:'trend-up' },
-    { ico:<Ico d={<><path d="M10.3 3.9 1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/></>}/>, bg:['var(--red-bg)','var(--red)'], num:urgent, label:'Casos urgentes', trend:'Prioridad', tc:'trend-down' },
-    { ico:<Ico d={<><path d="M6 18h8M3 22h18M14 22a7 7 0 100-14h-1M9 14h2M9 12a2 2 0 01-2-2V6a2 2 0 012-2 2 2 0 012 2v4a2 2 0 01-2 2z"/></>}/>, bg:['#eef1f4','#5f7488'], num:inProc, label:'En proceso', trend:'En curso', tc:'trend-flat' },
-    { ico:<Ico d={<><path d="M22 11.1V12a10 10 0 11-5.9-9.1"/><path d="M22 4 12 14l-3-3"/></>}/>, bg:['var(--green-bg)','var(--green)'], num:validated, label:'Validadas (mes)', trend:'+12%', tc:'trend-up' },
+    { ico:<Ico d={<><path d="M9 3h6M10 3v6.5L5.5 17a2 2 0 001.8 3h9.4a2 2 0 001.8-3L14 9.5V3"/><path d="M7.5 14h9"/></>}/>, bg:['var(--brand-50)','var(--brand-700)'], num:total, label:t('dash.statActive'), trend:t('dash.trendToday'), tc:'trend-up' },
+    { ico:<Ico d={<><path d="M10.3 3.9 1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/></>}/>, bg:['var(--red-bg)','var(--red)'], num:urgent, label:t('dash.statUrgent'), trend:t('dash.trendPriority'), tc:'trend-down' },
+    { ico:<Ico d={<><path d="M6 18h8M3 22h18M14 22a7 7 0 100-14h-1M9 14h2M9 12a2 2 0 01-2-2V6a2 2 0 012-2 2 2 0 012 2v4a2 2 0 01-2 2z"/></>}/>, bg:['#eef1f4','#5f7488'], num:inProc, label:t('dash.statProgress'), trend:t('dash.trendOngoing'), tc:'trend-flat' },
+    { ico:<Ico d={<><path d="M22 11.1V12a10 10 0 11-5.9-9.1"/><path d="M22 4 12 14l-3-3"/></>}/>, bg:['var(--green-bg)','var(--green)'], num:validated, label:t('dash.statValidated'), trend:t('dash.trendUp'), tc:'trend-up' },
   ];
 
   return (
     <div>
       <div className="page-head">
         <div>
-          <h1>Bon dia, Dra. Vendrell</h1>
-          <p>Tienes <strong>{urgent} caso{urgent!==1?'s':''} urgente{urgent!==1?'s':''}</strong> pendiente{urgent!==1?'s':''} de diagnóstico · {inProc} muestras en proceso</p>
+          <h1>{t('dash.greeting')}</h1>
+          <p>{t('dash.youHave')} <strong>{urgent} {urgent!==1?t('dash.urgentPendingPl'):t('dash.urgentPendingSg')}</strong> · {inProc} {t('dash.samplesInProgress')}</p>
         </div>
         <div className="page-head-actions">
-          <button className="btn btn-ghost" onClick={()=>setView('quality')}>Ver auditoría</button>
-          <button className="btn btn-primary" onClick={onNewSample}>{I.plus} Nueva muestra</button>
+          <button className="btn btn-ghost" onClick={()=>setView('quality')}>{t('dash.auditBtn')}</button>
+          <button className="btn btn-primary" onClick={onNewSample}>{I.plus} {t('dash.newSample')}</button>
         </div>
       </div>
 
@@ -1624,8 +1813,8 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
       <div className="dash-grid">
         <div className="card">
           <div className="card-head">
-            <h3>Carga de trabajo por patólogo</h3>
-            <div className="card-actions"><span style={{fontSize:11.5,color:'var(--text-3)'}}>Casos asignados hoy</span></div>
+            <h3>{t('dash.workload')}</h3>
+            <div className="card-actions"><span style={{fontSize:11.5,color:'var(--text-3)'}}>{t('dash.assignedToday')}</span></div>
           </div>
           <div style={{padding:'8px 18px 14px'}}>
             {PATHOLOGISTS.map((p,i)=>{
@@ -1640,7 +1829,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
                   <div className="wl-bar-wrap">
                     <div className="wl-bar"><div style={{height:'100%',width:`${p.count/max*100}%`,background:p.color,borderRadius:99}}></div></div>
                   </div>
-                  <div className="wl-count">{p.count} casos</div>
+                  <div className="wl-count">{p.count} {t('dash.cases')}</div>
                 </div>
               );
             })}
@@ -1648,7 +1837,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
         </div>
 
         <div className="card">
-          <div className="card-head"><h3>Distribución por especialidad</h3></div>
+          <div className="card-head"><h3>{t('dash.bySpecialty')}</h3></div>
           <div style={{padding:'18px'}}>
             <div className="donut-wrap">
               <svg className="donut" viewBox="0 0 130 130">
@@ -1659,7 +1848,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
                     transform="rotate(-90 65 65)" strokeLinecap="butt"/>
                 ))}
                 <text x="65" y="61" textAnchor="middle" fontSize="22" fontWeight="800" fill="var(--text)">{totalSpec}</text>
-                <text x="65" y="77" textAnchor="middle" fontSize="9" fontWeight="600" fill="var(--text-3)">MUESTRAS</text>
+                <text x="65" y="77" textAnchor="middle" fontSize="9" fontWeight="600" fill="var(--text-3)">{t('dash.samplesWord')}</text>
               </svg>
               <div style={{flex:1}}>
                 {bySpec.map((s,i)=>(
@@ -1677,8 +1866,8 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 
       <div className="card">
         <div className="card-head">
-          <h3>Actividad reciente</h3>
-          <div className="card-actions"><button className="btn btn-ghost btn-sm" onClick={()=>setView('quality')}>Ver todo</button></div>
+          <h3>{t('dash.recentActivity')}</h3>
+          <div className="card-actions"><button className="btn btn-ghost btn-sm" onClick={()=>setView('quality')}>{t('dash.seeAll')}</button></div>
         </div>
         <div>
           {AUDIT.slice(0,4).map((a,i)=>(
@@ -1700,6 +1889,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 
 /* ════════════════ SAMPLES ════════════════ */
 function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport, onOpenAdmin }) {
+  const { t, lang } = useT();
   const [mode, setMode] = useState('kanban');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -1731,23 +1921,23 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
     <div>
       <div className="page-head">
         <div>
-          <h1>Muestras</h1>
-          <p>{filtered.length} muestra{filtered.length!==1?'s':''}{q?` · resultados para “${search}”`:' · trazabilidad completa en tiempo real'}</p>
+          <h1>{t('samples.title')}</h1>
+          <p>{filtered.length} {filtered.length!==1?t('samples.samplePl'):t('samples.sampleSg')}{q?` · ${t('samples.resultsFor')} “${search}”`:` · ${t('samples.fullTraceability')}`}</p>
         </div>
         <div className="page-head-actions">
-          <button className="btn btn-soft" onClick={()=>setShowLabels(true)} disabled={!pendingLabels.length}>{GL.tag} Imprimir etiquetas{pendingLabels.length?` (${pendingLabels.length})`:''}</button>
-          <button className="btn btn-primary" onClick={()=>setShowNew(true)}>{I.plus} Nueva muestra</button>
+          <button className="btn btn-soft" onClick={()=>setShowLabels(true)} disabled={!pendingLabels.length}>{GL.tag} {t('samples.printLabels')}{pendingLabels.length?` (${pendingLabels.length})`:''}</button>
+          <button className="btn btn-primary" onClick={()=>setShowNew(true)}>{I.plus} {t('samples.newSample')}</button>
         </div>
       </div>
 
       <div className="card" style={{marginBottom:16}}>
         <div className="card-head" style={{padding:'12px 16px'}}>
           <div className="seg">
-            <button className={mode==='kanban'?'on':''} onClick={()=>setMode('kanban')}>Flujo</button>
-            <button className={mode==='table'?'on':''} onClick={()=>setMode('table')}>Tabla</button>
+            <button className={mode==='kanban'?'on':''} onClick={()=>setMode('kanban')}>{t('samples.flow')}</button>
+            <button className={mode==='table'?'on':''} onClick={()=>setMode('table')}>{t('samples.table')}</button>
           </div>
           <div style={{display:'flex',gap:6,marginLeft:14,flexWrap:'wrap'}}>
-            <button className={`btn btn-sm ${filter==='all'?'btn-soft':'btn-ghost'}`} onClick={()=>setFilter('all')}>Todas</button>
+            <button className={`btn btn-sm ${filter==='all'?'btn-soft':'btn-ghost'}`} onClick={()=>setFilter('all')}>{t('samples.all')}</button>
             {Object.keys(specialties).map(sp=>(
               <button key={sp} className={`btn btn-sm ${filter===sp?'btn-soft':'btn-ghost'}`} onClick={()=>setFilter(sp)}>{specialties[sp].short}</button>
             ))}
@@ -1756,17 +1946,17 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
         </div>
         <div className="card-head" style={{padding:'10px 16px',borderTop:'1px solid var(--line)',flexWrap:'wrap',gap:10}}>
           <div className="field" style={{margin:0,minWidth:190}}>
-            <input className="field-input" placeholder="Nº de muestra: 921, 921-926…" value={numQuery} onChange={e=>setNumQuery(e.target.value)}/>
+            <input className="field-input" placeholder={t('samples.numPlaceholder')} value={numQuery} onChange={e=>setNumQuery(e.target.value)}/>
           </div>
           <select className="field-input" style={{maxWidth:170}} value={stateFilter} onChange={e=>setStateFilter(e.target.value)}>
-            <option value="all">Todos los estados</option>
-            {Object.keys(STATES).map(k=><option key={k} value={k}>{STATES[k].label}</option>)}
+            <option value="all">{t('samples.allStates')}</option>
+            {Object.keys(STATES).map(k=><option key={k} value={k}>{stateLabelT(lang,k)}</option>)}
           </select>
           <select className="field-input" style={{maxWidth:220}} value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
-            <option value="all">Todos los clientes / mútuas</option>
+            <option value="all">{t('samples.allClients')}</option>
             {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          {anyAdvancedFilter && <button className="btn btn-ghost btn-sm" onClick={clearAdvanced}>Limpiar filtros</button>}
+          {anyAdvancedFilter && <button className="btn btn-ghost btn-sm" onClick={clearAdvanced}>{t('samples.clearFilters')}</button>}
         </div>
       </div>
 
@@ -1778,7 +1968,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
               <div className="kcol" key={col}>
                 <div className="kcol-head">
                   <span className="kcol-dot" style={{background:STATES[col].dot}}></span>
-                  <span className="kcol-title">{STATES[col].label}</span>
+                  <span className="kcol-title">{stateLabelT(lang,col)}</span>
                   <span className="kcol-count">{items.length}</span>
                 </div>
                 <div className="kcol-body">
@@ -1801,7 +1991,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
                       </div>
                     );
                   })}
-                  {items.length===0 && <div style={{fontSize:11.5,color:'var(--text-3)',textAlign:'center',padding:'14px 0'}}>Sin muestras</div>}
+                  {items.length===0 && <div style={{fontSize:11.5,color:'var(--text-3)',textAlign:'center',padding:'14px 0'}}>{t('samples.noneInCol')}</div>}
                 </div>
               </div>
             );
@@ -1812,7 +2002,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
           <div className="tbl-wrap">
             <table className="tbl">
               <thead><tr>
-                <th>Código</th><th>Tipo</th><th>Muestra</th><th>Paciente</th><th>Cliente / mútua</th><th>Especialidad</th><th>Estado</th><th>Recepción</th>
+                <th>{t('samples.colCode')}</th><th>{t('samples.colType')}</th><th>{t('samples.colSample')}</th><th>{t('samples.colPatient')}</th><th>{t('samples.colClient')}</th><th>{t('samples.colSpec')}</th><th>{t('samples.colState')}</th><th>{t('samples.colReceived')}</th>
               </tr></thead>
               <tbody>
                 {filtered.map(s=>{
@@ -1825,7 +2015,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
                       <td>{s.patient} <span style={{color:'var(--text-3)'}}>· {s.age}a {s.sex}</span></td>
                       <td style={{color:'var(--text-2)'}}>{clientById(clients, s.client)?.name || s.ref}</td>
                       <td><span className="spec-pill" style={{background:bg,color:fg}}>{specShort(specialties, s.spec)}</span></td>
-                      <td><span className="status-pill" style={{background:sbg,color:sfg}}><span className="sp-dot" style={{background:sfg}}></span>{STATES[s.state].label}</span></td>
+                      <td><span className="status-pill" style={{background:sbg,color:sfg}}><span className="sp-dot" style={{background:sfg}}></span>{stateLabelT(lang,s.state)}</span></td>
                       <td style={{color:'var(--text-3)',fontSize:12}}>{s.received}</td>
                     </tr>
                   );
@@ -1837,7 +2027,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
       )}
 
       {filtered.length===0 && (
-        <div className="card"><div className="empty"><div className="empty-ico">{I.search}</div><h3>Sin resultados</h3><p>No hay muestras que coincidan con los filtros o la búsqueda actual.</p>{q && <button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>Limpiar búsqueda</button>}</div></div>
+        <div className="card"><div className="empty"><div className="empty-ico">{I.search}</div><h3>{t('samples.emptyTitle')}</h3><p>{t('samples.emptyDesc')}</p>{q && <button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>{t('samples.clearSearch')}</button>}</div></div>
       )}
 
       {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={onOpenAdmin} setSelected={setSelected} onOpenReport={onOpenReport} />}
@@ -1848,6 +2038,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
 }
 
 function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, diagnosisCodes={}, addDiagnosisCode=()=>{}, markLabelsPrinted=null, onOpenAdmin=null, setSelected, onOpenReport }) {
+  const { lang } = useT();
   const [showLabels, setShowLabels] = useState(false);
   const s = sample;
   const [bg,fg] = specStyle(specialties, s.spec);
@@ -1941,7 +2132,7 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
           <div style={{marginBottom:6,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
             <span className="tipo-tag" title={TIPOS[s.tipo]?.label}>{s.tipo}</span>
             <span className="spec-pill" style={{background:bg,color:fg,fontSize:11.5,padding:'4px 11px'}}>{s.spec}</span>
-            {(() => { const [sbg,sfg]=stateBg[s.state]; return <span className="status-pill" style={{background:sbg,color:sfg}}><span className="sp-dot" style={{background:sfg}}></span>{STATES[s.state].label}</span>; })()}
+            {(() => { const [sbg,sfg]=stateBg[s.state]; return <span className="status-pill" style={{background:sbg,color:sfg}}><span className="sp-dot" style={{background:sfg}}></span>{stateLabelT(lang,s.state)}</span>; })()}
           </div>
 
           <div className="detail-grid" style={{marginTop:18}}>
@@ -2069,7 +2260,7 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
           </div>
         </div>
         <div className="drawer-foot">
-          {canAdvance && <button className="btn btn-primary" style={{flex:1}} onClick={advance} disabled={inclusionMissing || diagnosisMissing} title={inclusionMissing?'Completa material, descripción y técnica':diagnosisMissing?'Completa el código y el texto de diagnóstico':''}>Avanzar a: {STATES[nextState].label}</button>}
+          {canAdvance && <button className="btn btn-primary" style={{flex:1}} onClick={advance} disabled={inclusionMissing || diagnosisMissing} title={inclusionMissing?'Completa material, descripción y técnica':diagnosisMissing?'Completa el código y el texto de diagnóstico':''}>Avanzar a: {stateLabelT(lang,nextState)}</button>}
           {!canAdvance && <button className="btn btn-soft" style={{flex:1}} disabled>Caso validado y cerrado</button>}
           <button className="btn btn-ghost" onClick={()=>{ saveInclusion(); saveDiagnosis(); onClose(); onOpenReport && onOpenReport(s.id); }}>{I.doc} Informe</button>
         </div>
@@ -2874,6 +3065,7 @@ function Analyze() {
 
 /* ════════════════ CLIENTES Y TARIFAS ════════════════ */
 function Clients({ samples, clients, addClient, updateClient, deleteClient, onOpenSamples, adminDocs=[], onOpenAdmin }) {
+  const { t } = useT();
   const [modal, setModal] = useState(null); // null | 'new' | client object a editar
 
   const rows = clients.map(c => {
@@ -2889,10 +3081,10 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
   const activos = rows.filter(r=>r.count>0).length;
   const avgDto = rows.length ? Math.round(rows.reduce((a,b)=>a+b.discount,0)/rows.length) : 0;
   const stats = [
-    { label:'Clientes registrados', num:clients.length },
-    { label:'Con muestras activas', num:activos },
-    { label:'Muestras vinculadas',  num:totalMuestras },
-    { label:'Descuento medio',       num:avgDto+'%' },
+    { label:t('clients.statTotal'), num:clients.length },
+    { label:t('clients.statActive'), num:activos },
+    { label:t('clients.statLinked'),  num:totalMuestras },
+    { label:t('clients.statDiscount'), num:avgDto+'%' },
   ];
 
   const remove = (c) => {
@@ -2903,11 +3095,11 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
     <div>
       <div className="page-head">
         <div>
-          <h1>Clientes y tarifas</h1>
-          <p>Condiciones diferenciadas por cliente · descuentos y tarifas por tipo de muestra, editables por el propio laboratorio</p>
+          <h1>{t('clients.title')}</h1>
+          <p>{t('clients.subtitle')}</p>
         </div>
         <div className="page-head-actions">
-          <button className="btn btn-primary" onClick={()=>setModal('new')}>{I.plus} Nuevo cliente</button>
+          <button className="btn btn-primary" onClick={()=>setModal('new')}>{I.plus} {t('clients.new')}</button>
         </div>
       </div>
 
@@ -2921,7 +3113,7 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
       </div>
 
       {rows.length===0 && (
-        <div className="card"><div className="empty"><div className="empty-ico">{GL.building}</div><h3>Sin clientes todavía</h3><p>Añade el primer hospital, clínica o mútua con «Nuevo cliente».</p></div></div>
+        <div className="card"><div className="empty"><div className="empty-ico">{GL.building}</div><h3>{t('clients.emptyTitle')}</h3><p>{t('clients.emptyDesc')}</p></div></div>
       )}
 
       <div className="client-grid">
@@ -2967,10 +3159,10 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
             <div className="cc-vol" style={{marginBottom:0,borderBottom:'none'}}>
               <div style={{fontSize:12,color:'var(--text-2)'}}>
                 {c.docCount
-                  ? <>{GL.tag} <strong>{c.docCount}</strong> documento{c.docCount!==1?'s':''} · {c.docPending} pendiente{c.docPending!==1?'s':''}</>
-                  : <span style={{color:'var(--text-3)'}}>Sin ofertas, pedidos ni facturas todavía</span>}
+                  ? <>{GL.tag} <strong>{c.docCount}</strong> {c.docCount!==1?t('clients.docs'):t('clients.doc')} · {c.docPending} {c.docPending!==1?t('clients.docPendingPl'):t('clients.docPendingSg')}</>
+                  : <span style={{color:'var(--text-3)'}}>{t('clients.docsNone')}</span>}
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={()=>onOpenAdmin && onOpenAdmin({ clientId:c.id, openNew:c.docCount===0 })}>{c.docCount?'Ver documentos':'Nuevo documento'}</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>onOpenAdmin && onOpenAdmin({ clientId:c.id, openNew:c.docCount===0 })}>{c.docCount?t('clients.viewDocs'):t('clients.newDoc')}</button>
             </div>
           </div>
         ))}
@@ -3082,6 +3274,7 @@ function ClientModal({ client, onClose, onSave }) {
    pedía el laboratorio, con enlaces directos desde Muestras y Clientes para no
    tener que volver atrás a buscar el documento a mano. */
 function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, clients, samples, focus, clearFocus, showToast }) {
+  const { t, lang } = useT();
   const [type, setType] = useState('factura');
   const [clientFilter, setClientFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -3115,39 +3308,39 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
     return true;
   });
   const selected = adminDocs.find(d=>d.id===selectedId) || null;
-  const counts = Object.keys(DOC_TYPES).reduce((acc,t)=>{ acc[t]=adminDocs.filter(d=>d.type===t).length; return acc; }, {});
+  const counts = Object.keys(DOC_TYPES).reduce((acc,dt)=>{ acc[dt]=adminDocs.filter(d=>d.type===dt).length; return acc; }, {});
 
   return (
     <div>
       <div className="page-head">
         <div>
-          <h1>Administración</h1>
-          <p>Ofertas, pedidos, albaranes, facturas y proformas, ligados a clientes y muestras reales</p>
+          <h1>{t('admin.title')}</h1>
+          <p>{t('admin.subtitle')}</p>
         </div>
         <div className="page-head-actions">
-          <button className="btn btn-primary" onClick={()=>setShowNew(true)}>{I.plus} Nuevo/a {DOC_TYPES[type].label.toLowerCase()}</button>
+          <button className="btn btn-primary" onClick={()=>setShowNew(true)}>{I.plus} {t('admin.newPrefix')} {docTypeLabel(lang,type).toLowerCase()}</button>
         </div>
       </div>
 
       <div className="card" style={{marginBottom:16}}>
         <div className="card-head" style={{padding:'12px 16px',flexWrap:'wrap',gap:8}}>
           <div className="seg">
-            {Object.keys(DOC_TYPES).map(t=>(
-              <button key={t} className={type===t?'on':''} onClick={()=>{setType(t); setSelectedId(null);}}>{DOC_TYPES[t].plural} {counts[t]?`(${counts[t]})`:''}</button>
+            {Object.keys(DOC_TYPES).map(dt=>(
+              <button key={dt} className={type===dt?'on':''} onClick={()=>{setType(dt); setSelectedId(null);}}>{docTypePlural(lang,dt)} {counts[dt]?`(${counts[dt]})`:''}</button>
             ))}
           </div>
         </div>
         <div className="card-head" style={{padding:'10px 16px',borderTop:'1px solid var(--line)',flexWrap:'wrap',gap:10}}>
           <div className="field" style={{margin:0,minWidth:190}}>
-            <input className="field-input" placeholder="Buscar código, cliente, notas…" value={search} onChange={e=>setSearch(e.target.value)}/>
+            <input className="field-input" placeholder={t('admin.searchPlaceholder')} value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
           <select className="field-input" style={{maxWidth:220}} value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
-            <option value="all">Todos los clientes / mútuas</option>
+            <option value="all">{t('admin.allClients')}</option>
             {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <select className="field-input" style={{maxWidth:180}} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-            <option value="all">Todos los estados</option>
-            {Object.entries(DOC_TYPES[type].statuses).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+            <option value="all">{t('admin.allStates')}</option>
+            {Object.keys(DOC_TYPES[type].statuses).map(k=><option key={k} value={k}>{docStatusLabel(lang,k)}</option>)}
           </select>
         </div>
       </div>
@@ -3155,7 +3348,7 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
       <div className="card">
         <div className="tbl-wrap">
           <table className="tbl">
-            <thead><tr><th>Código</th><th>Cliente</th><th>Fecha</th><th>Líneas</th><th>Total</th><th>Estado</th></tr></thead>
+            <thead><tr><th>{t('admin.colCode')}</th><th>{t('admin.colClient')}</th><th>{t('admin.colDate')}</th><th>{t('admin.colLines')}</th><th>{t('admin.colTotal')}</th><th>{t('admin.colState')}</th></tr></thead>
             <tbody>
               {filtered.map(d=>{
                 const client = clientById(clients, d.clientId);
@@ -3166,7 +3359,7 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
                     <td style={{color:'var(--text-3)',fontSize:12}}>{d.date}</td>
                     <td>{(d.lines||[]).length}</td>
                     <td style={{fontWeight:600}}>{docTotal(d).toFixed(2)} €</td>
-                    <td><span className="status-pill" style={{background:'#eef1f4',color:'#5f7488'}}>{DOC_TYPES[type].statuses[d.status]||d.status}</span></td>
+                    <td><span className="status-pill" style={{background:'#eef1f4',color:'#5f7488'}}>{docStatusLabel(lang,d.status)}</span></td>
                   </tr>
                 );
               })}
@@ -3174,7 +3367,7 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
           </table>
         </div>
         {filtered.length===0 && (
-          <div className="empty"><div className="empty-ico">{I.admin}</div><h3>Sin {DOC_TYPES[type].plural.toLowerCase()}</h3><p>Crea la primera con «Nuevo/a {DOC_TYPES[type].label.toLowerCase()}».</p></div>
+          <div className="empty"><div className="empty-ico">{I.admin}</div><h3>{t('admin.emptyTitlePrefix')} {docTypePlural(lang,type).toLowerCase()}</h3><p>{t('admin.emptyDescTpl').replace('%s', docTypeLabel(lang,type).toLowerCase())}</p></div>
         )}
       </div>
 
@@ -3197,6 +3390,7 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
 }
 
 function DocModal({ type, clients, samples, presetClientId, presetSampleId, onClose, onCreate }) {
+  const { lang } = useT();
   const [clientId, setClientId] = useState(presetClientId || clients[0]?.id || '');
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
@@ -3233,7 +3427,7 @@ function DocModal({ type, clients, samples, presetClientId, presetSampleId, onCl
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
       <div className="modal" style={{width:680}}>
         <div className="modal-head">
-          <h3>{I.plus} Nuevo/a {DOC_TYPES[type].label.toLowerCase()}</h3>
+          <h3>{I.plus} Nuevo/a {docTypeLabel(lang,type).toLowerCase()}</h3>
           <p>El código se asigna automáticamente. Añade líneas desde las muestras del cliente o a mano.</p>
         </div>
         <div className="modal-body">
@@ -3289,7 +3483,7 @@ function DocModal({ type, clients, samples, presetClientId, presetSampleId, onCl
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={submit} disabled={!valid}>Crear {DOC_TYPES[type].label.toLowerCase()}</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!valid}>Crear {docTypeLabel(lang,type).toLowerCase()}</button>
         </div>
       </div>
     </div>
@@ -3298,6 +3492,7 @@ function DocModal({ type, clients, samples, presetClientId, presetSampleId, onCl
 }
 
 function DocDrawer({ doc, clients, onClose, updateStatus, onConvert, onOpenRelated }) {
+  const { lang } = useT();
   const client = clientById(clients, doc.clientId);
   const total = docTotal(doc);
   const nextType = DOC_TYPES[doc.type].next[doc.status];
@@ -3308,7 +3503,7 @@ function DocDrawer({ doc, clients, onClose, updateStatus, onConvert, onOpenRelat
       <div className="drawer">
         <div className="drawer-head">
           <div>
-            <div className="dh-id"><span className="mono" style={{color:'var(--brand-700)'}}>{doc.code}</span> · {DOC_TYPES[doc.type].label}</div>
+            <div className="dh-id"><span className="mono" style={{color:'var(--brand-700)'}}>{doc.code}</span> · {docTypeLabel(lang,doc.type)}</div>
             <h2>{client?.name || '—'}</h2>
           </div>
           <button className="drawer-close" onClick={onClose} aria-label="Cerrar"><Ico d={<><path d="M18 6 6 18M6 6l12 12"/></>} size={17}/></button>
@@ -3320,7 +3515,7 @@ function DocDrawer({ doc, clients, onClose, updateStatus, onConvert, onOpenRelat
             <div className="detail-item">
               <div className="di-label">Estado</div>
               <select className="field-input" style={{marginTop:2}} value={doc.status} onChange={e=>updateStatus(e.target.value)}>
-                {Object.entries(DOC_TYPES[doc.type].statuses).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                {Object.keys(DOC_TYPES[doc.type].statuses).map(k=><option key={k} value={k}>{docStatusLabel(lang,k)}</option>)}
               </select>
             </div>
             <div className="detail-item"><div className="di-label">Total</div><div className="di-val" style={{fontWeight:800}}>{total.toFixed(2)} €</div></div>
@@ -3336,7 +3531,7 @@ function DocDrawer({ doc, clients, onClose, updateStatus, onConvert, onOpenRelat
           <div className="section-title">Líneas</div>
           <div className="print-area">
             <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>
-              BCN Patòlegs — {DOC_TYPES[doc.type].label} {doc.code} — {client?.name} — {doc.date}
+              BCN Patòlegs — {docTypeLabel(lang,doc.type)} {doc.code} — {client?.name} — {doc.date}
             </div>
             <div className="tbl-wrap">
               <table className="tbl">
@@ -3359,7 +3554,7 @@ function DocDrawer({ doc, clients, onClose, updateStatus, onConvert, onOpenRelat
           {doc.notes && <><div className="section-title">Notas</div><div className="desc-box">{doc.notes}</div></>}
         </div>
         <div className="drawer-foot">
-          {nextType && <button className="btn btn-primary" style={{flex:1}} onClick={onConvert}>Convertir a {DOC_TYPES[nextType].label}</button>}
+          {nextType && <button className="btn btn-primary" style={{flex:1}} onClick={onConvert}>Convertir a {docTypeLabel(lang,nextType)}</button>}
           <button className="btn btn-ghost" onClick={()=>window.print()}>{I.print} Imprimir</button>
         </div>
       </div>
