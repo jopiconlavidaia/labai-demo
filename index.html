@@ -870,7 +870,8 @@ const clientById = (clients, id) => clients.find(c=>c.id===id);
 const slugify = (name) => (name.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'cliente');
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
 
-// Persistencia sencilla en localStorage, con guarda ante datos corruptos o inexistentes.
+// Persistencia sencilla en localStorage, con guarda ante datos corruptos, inexistentes
+// o directamente inaccesibles (file://, modo incógnito, iframes con storage bloqueado...).
 function loadStored(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -881,6 +882,12 @@ function loadStored(key, fallback) {
 }
 function saveStored(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+}
+function getStoredFlag(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+function setStoredFlag(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) {}
 }
 
 const STATES = {
@@ -1057,11 +1064,13 @@ Informe redactado a partir de los hallazgos consignados por el patólogo. Se rec
 (Borrador generado en modo demostración. Con una clave de Groq conectada, la redacción la realiza el modelo de IA Llama 3.3 70B adaptándose a cada caso.)`;
 }
 
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+// llama-3.3-70b-versatile fue retirado por Groq el 2026-08-16; openai/gpt-oss-120b
+// es el modelo de migración recomendado (ver worker/README.md).
+const GROQ_MODEL = 'openai/gpt-oss-120b';
 
 // Servidor compartido (Cloudflare Worker) que guarda la clave de Groq.
 // Todos los que abren el enlace usan IA real sin meter ninguna clave.
-const PROXY_URL = 'https://labai-ia.la-costa-agency1.workers.dev';
+const PROXY_URL = 'https://labia.jopiconlavidaia.workers.dev';
 
 // ¿Hay IA real disponible? (clave propia del usuario o servidor compartido)
 const aiAvailable = (apiKey) => (apiKey && apiKey.startsWith('gsk_')) || !!PROXY_URL;
@@ -1103,7 +1112,7 @@ function App() {
   // Sin gestión de clave personal: el laboratorio usa siempre el servidor de IA
   // compartido (PROXY_URL). No hay botón "Activar IA" ni clave que configurar.
   const apiKey = '';
-  const [showGuide, setShowGuide] = useState(() => !localStorage.getItem('labai_onboarded'));
+  const [showGuide, setShowGuide] = useState(() => !getStoredFlag('labai_onboarded'));
   const [samples, setSamples] = useState(INITIAL_SAMPLES);
   // Especialidades y clientes/mútuas: editables por el laboratorio, persisten en este navegador.
   const [specialties, setSpecialties] = useState(() => loadStored('labai_specialties', DEFAULT_SPECIALTIES));
@@ -1119,7 +1128,7 @@ function App() {
   // null = aún no comprobado, 'ok' = responde, 'error' = configurado pero no responde.
   const [aiStatus, setAiStatus] = useState(null);
 
-  const closeGuide = () => { setShowGuide(false); localStorage.setItem('labai_onboarded','1'); };
+  const closeGuide = () => { setShowGuide(false); setStoredFlag('labai_onboarded','1'); };
 
   // "Realmente activa": comprobado en vivo contra el servidor compartido, no solo
   // "hay una URL configurada" — si ya se comprobó y falló, no mentimos.
