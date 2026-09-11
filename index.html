@@ -11,6 +11,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -785,6 +786,26 @@
     .chat-docs { width: 100%; min-width: 0; max-height: 160px; border-right: none; border-bottom: 1px solid var(--border); }
     .drawer { width: 100%; max-width: 100vw; }
   }
+
+  /* ── Etiquetas de muestra (tallado) ── */
+  .label-sheet { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .label-box {
+    border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px;
+    display: flex; gap: 10px; align-items: center; background: #fff;
+  }
+  .label-box img { width: 56px; height: 56px; flex-shrink: 0; }
+  .label-kind { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--brand-700); }
+  .label-code { font-family: monospace; font-size: 15px; font-weight: 700; margin: 2px 0; }
+  .label-meta { font-size: 11.5px; color: var(--text-2); line-height: 1.4; }
+  .label-check-row { display: flex; align-items: center; gap: 9px; padding: 7px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .label-check-row:last-child { border-bottom: none; }
+
+  @media print {
+    body * { visibility: hidden; }
+    .print-area, .print-area * { visibility: visible; }
+    .print-area { position: absolute; top: 0; left: 0; width: 100%; padding: 12px; }
+    .label-box { break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
@@ -947,6 +968,27 @@ let SID = 926;
 let CASE_SEQ = 131; // correlativo de caso del año (formato 25B127-A); por encima de los datos demo
 // caseCode = año(2 díg) + letra de tipo + correlativo; cada bote suma una letra (A, B, C…).
 const potLetters = (n) => Array.from({length:Math.max(n,1)}, (_,i)=>String.fromCharCode(65+i));
+
+// QR generado en el propio navegador (librería qrcode-generator cargada por
+// <script>): el código de la muestra nunca sale del navegador hacia terceros.
+// Solo se codifica el código de caso, nunca el nombre del paciente.
+function qrDataUrl(text) {
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    return qr.createDataURL(4, 4);
+  } catch (e) { return null; }
+}
+
+// Dos etiquetas por bote recibido (bote + hoja de petición), tal como se usan
+// en recepción: una se pega en el pote, la otra en la hoja de petición.
+function labelsForSample(s) {
+  const letters = potLetters(s.pots || 1);
+  const pots = letters.map(l => ({ code:`${s.caseCode}-${l}`, kind:'Bote', sampleId:s.id, patient:s.patient, received:s.received }));
+  const req = { code:s.caseCode, kind:'Hoja de petición', sampleId:s.id, patient:s.patient, received:s.received };
+  return [...pots, req];
+}
 const mkSample = (o) => {
   const pots = o.pots || 1;
   const caseCode = `25${o.tipo||'B'}${o.caseNo}`;
@@ -1210,6 +1252,9 @@ function App() {
     setLastReception({ client: s.client, insurer: s.insurer, ref: s.ref });
     showToast(`Muestra ${s.caseCode} registrada correctamente`);
   };
+  const markLabelsPrinted = (ids) => {
+    setSamples(prev => prev.map(s => ids.includes(s.id) ? { ...s, labelsPrinted:true } : s));
+  };
   const addInsurer = (name) => {
     const clean = name.trim();
     if (!clean || insurers.includes(clean)) return;
@@ -1283,7 +1328,7 @@ function App() {
         <div className="content">
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
             {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
@@ -1567,14 +1612,16 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
   const [mode, setMode] = useState('kanban');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
   const [numQuery, setNumQuery] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('all');
+  const pendingLabels = samples.filter(s=>!s.labelsPrinted);
 
   useEffect(()=>{ if (pendingNew) { setShowNew(true); clearPendingNew(); } }, [pendingNew]);
 
@@ -1601,6 +1648,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
           <p>{filtered.length} muestra{filtered.length!==1?'s':''}{q?` · resultados para “${search}”`:' · trazabilidad completa en tiempo real'}</p>
         </div>
         <div className="page-head-actions">
+          <button className="btn btn-soft" onClick={()=>setShowLabels(true)} disabled={!pendingLabels.length}>{GL.tag} Imprimir etiquetas{pendingLabels.length?` (${pendingLabels.length})`:''}</button>
           <button className="btn btn-primary" onClick={()=>setShowNew(true)}>{I.plus} Nueva muestra</button>
         </div>
       </div>
@@ -1705,13 +1753,15 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
         <div className="card"><div className="empty"><div className="empty-ico">{I.search}</div><h3>Sin resultados</h3><p>No hay muestras que coincidan con los filtros o la búsqueda actual.</p>{q && <button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>Limpiar búsqueda</button>}</div></div>
       )}
 
-      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} setSelected={setSelected} onOpenReport={onOpenReport} />}
+      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} markLabelsPrinted={markLabelsPrinted} setSelected={setSelected} onOpenReport={onOpenReport} />}
       {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} />}
+      {showLabels && <LabelsModal candidates={pendingLabels} onClose={()=>setShowLabels(false)} markPrinted={markLabelsPrinted} />}
     </div>
   );
 }
 
-function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, setSelected, onOpenReport }) {
+function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, markLabelsPrinted=null, setSelected, onOpenReport }) {
+  const [showLabels, setShowLabels] = useState(false);
   const s = sample;
   const [bg,fg] = specStyle(specialties, s.spec);
   const trace = TRACE(s);
@@ -1763,6 +1813,7 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
   };
 
   return (
+    <>
     <Portal>
     <div className="drawer-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
       <div className="drawer">
@@ -1798,6 +1849,14 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
               <div className="obj-chip" key={'pot'+i}><span className="oc-ico">{GL.flask}</span><span className="oc-id">{s.caseCode}-{l}</span><span className="oc-meta">Bote {i+1}</span></div>
             ))}
           </div>
+          {markLabelsPrinted && (
+            <div style={{display:'flex',alignItems:'center',gap:10,marginTop:8,fontSize:12.5}}>
+              {s.labelsPrinted
+                ? <span style={{color:'var(--green)'}}>{GL.check} Etiquetas impresas</span>
+                : <span style={{color:'var(--amber)'}}>{GL.alert} Etiquetas pendientes de imprimir</span>}
+              <button className="btn btn-ghost btn-sm" onClick={()=>setShowLabels(true)}>{s.labelsPrinted?'Reimprimir':'Imprimir'} etiquetas</button>
+            </div>
+          )}
 
           <div className="section-title">Macroscopia · tipo de material</div>
           {inInclusion ? (
@@ -1880,6 +1939,8 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
       </div>
     </div>
     </Portal>
+    {showLabels && <LabelsModal candidates={[s]} onClose={()=>setShowLabels(false)} markPrinted={markLabelsPrinted || (()=>{})} />}
+    </>
   );
 }
 
@@ -2034,6 +2095,72 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" onClick={submit} disabled={!valid}>Registrar {previewCode}</button>
+        </div>
+      </div>
+    </div>
+    </Portal>
+  );
+}
+
+/* ════════════════ ETIQUETAS (TALLADO) ════════════════ */
+// Imprime dos etiquetas por bote recibido (bote + hoja de petición), con QR
+// generado en el propio navegador — igual que hace la técnica en el
+// laboratorio: selecciona lo que ha llegado y le da a imprimir, de golpe.
+function LabelsModal({ candidates, onClose, markPrinted }) {
+  const [ids, setIds] = useState(() => candidates.map(s=>s.id));
+  const toggle = (id) => setIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  const selected = candidates.filter(s=>ids.includes(s.id));
+  const labels = selected.flatMap(labelsForSample);
+
+  const print = () => {
+    if (!ids.length) return;
+    markPrinted(ids);
+    setTimeout(() => { window.print(); onClose(); }, 50);
+  };
+
+  return (
+    <Portal>
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{width:640}}>
+        <div className="modal-head">
+          <h3>{GL.tag} Imprimir etiquetas</h3>
+          <p>Una etiqueta por bote y una por hoja de petición, con QR del código de caso — pégalas en el pote y en la hoja.</p>
+        </div>
+        <div className="modal-body">
+          <div className="section-title" style={{marginTop:0}}>Muestras pendientes de etiquetar ({candidates.length})</div>
+          <div className="card" style={{marginBottom:16}}>
+            {candidates.length===0 && <div style={{padding:'14px 16px',fontSize:13,color:'var(--text-3)'}}>No hay muestras pendientes de imprimir etiquetas.</div>}
+            {candidates.map(s=>(
+              <label key={s.id} className="label-check-row" style={{cursor:'pointer',padding:'8px 12px'}}>
+                <input type="checkbox" checked={ids.includes(s.id)} onChange={()=>toggle(s.id)} style={{width:15,height:15}}/>
+                <span className="mono" style={{fontWeight:600}}>{s.caseCode}</span>
+                <span style={{color:'var(--text-2)'}}>{s.patient}</span>
+                <span style={{color:'var(--text-3)',marginLeft:'auto',fontSize:12}}>{s.pots} bote{s.pots!==1?'s':''} · {s.pots+1} etiquetas</span>
+              </label>
+            ))}
+          </div>
+
+          {labels.length>0 && (
+            <>
+              <div className="section-title">Vista previa ({labels.length} etiquetas)</div>
+              <div className="print-area label-sheet">
+                {labels.map((l,i)=>(
+                  <div className="label-box" key={i}>
+                    <img src={qrDataUrl(l.code)} alt={`QR ${l.code}`}/>
+                    <div>
+                      <div className="label-kind">{l.kind}</div>
+                      <div className="label-code">{l.code}</div>
+                      <div className="label-meta">{l.patient}<br/>{l.received}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Cerrar</button>
+          <button className="btn btn-primary" onClick={print} disabled={!ids.length}>{I.plus} Imprimir {labels.length} etiquetas</button>
         </div>
       </div>
     </div>
