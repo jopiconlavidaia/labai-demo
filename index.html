@@ -867,6 +867,29 @@ const DEFAULT_CLIENTS = [
   { id:'digest',  name:'Consulta Dr. Sànchez',        type:'Centro derivador', discount:0,  rate:{ B:100, C:60, P:74 } },
 ];
 const clientById = (clients, id) => clients.find(c=>c.id===id);
+
+// Filtro de nº de muestra: admite un número suelto, varios separados por coma y
+// rangos con guion, combinables ("3260-3284,3290"). En el sistema que describían
+// como referencia este filtro fallaba (ignoraba lo escrito); aquí se prueba con
+// los tres casos antes de darlo por bueno.
+function parseNumberQuery(raw) {
+  const parts = (raw||'').split(',').map(p=>p.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  const ranges = parts.map(p => {
+    const range = p.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (range) return [Number(range[1]), Number(range[2])];
+    return /^\d+$/.test(p) ? [Number(p), Number(p)] : null;
+  }).filter(Boolean);
+  if (!ranges.length) return null;
+  return (num) => ranges.some(([a,b]) => num >= Math.min(a,b) && num <= Math.max(a,b));
+}
+
+// Mútuas/aseguradoras y médicos derivantes: listas abiertas igual que clientes y
+// especialidades — el laboratorio las va completando con sus datos reales, sin
+// nada cerrado. Son atributos por muestra (cada caso puede traer una mútua y un
+// médico distintos aunque vengan del mismo centro), no del cliente/centro en sí.
+const DEFAULT_INSURERS = ['Asisa', 'Adeslas', 'DKV', 'Sanitas', 'Mapfre', 'Axa', 'Particular'];
+const DEFAULT_DOCTORS = ['Dr. Pujol', 'Dr. Sànchez'];
 const slugify = (name) => (name.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'cliente');
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
 
@@ -1114,11 +1137,19 @@ function App() {
   const apiKey = '';
   const [showGuide, setShowGuide] = useState(() => !getStoredFlag('labai_onboarded'));
   const [samples, setSamples] = useState(INITIAL_SAMPLES);
-  // Especialidades y clientes/mútuas: editables por el laboratorio, persisten en este navegador.
+  // Especialidades, clientes/centros, mútuas y médicos: editables por el laboratorio, persisten en este navegador.
   const [specialties, setSpecialties] = useState(() => loadStored('labai_specialties', DEFAULT_SPECIALTIES));
   const [clients, setClients] = useState(() => loadStored('labai_clients', DEFAULT_CLIENTS));
+  const [insurers, setInsurers] = useState(() => loadStored('labai_insurers', DEFAULT_INSURERS));
+  const [doctors, setDoctors] = useState(() => loadStored('labai_doctors', DEFAULT_DOCTORS));
   useEffect(() => { saveStored('labai_specialties', specialties); }, [specialties]);
   useEffect(() => { saveStored('labai_clients', clients); }, [clients]);
+  useEffect(() => { saveStored('labai_insurers', insurers); }, [insurers]);
+  useEffect(() => { saveStored('labai_doctors', doctors); }, [doctors]);
+  // "Fijar datos": recuerda centro/mútua/médico de la última muestra registrada
+  // para precargarlos en la siguiente (mismo lote, mismo centro).
+  const [lastReception, setLastReception] = useState(null);
+  const [pinReception, setPinReception] = useState(false);
   const [toast, setToast] = useState(null);
   const [search, setSearch] = useState('');
   const [pendingNewSample, setPendingNewSample] = useState(false);
@@ -1158,7 +1189,18 @@ function App() {
 
   const addSample = (s) => {
     setSamples(prev => [s, ...prev]);
+    setLastReception({ client: s.client, insurer: s.insurer, ref: s.ref });
     showToast(`Muestra ${s.caseCode} registrada correctamente`);
+  };
+  const addInsurer = (name) => {
+    const clean = name.trim();
+    if (!clean || insurers.includes(clean)) return;
+    setInsurers(prev => [...prev, clean]);
+  };
+  const addDoctor = (name) => {
+    const clean = name.trim();
+    if (!clean || doctors.includes(clean)) return;
+    setDoctors(prev => [...prev, clean]);
   };
   const updateSample = (id, patch) => {
     setSamples(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
@@ -1213,7 +1255,7 @@ function App() {
         <div className="content">
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
             {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
@@ -1221,7 +1263,7 @@ function App() {
             {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
             {view === 'team'      && <Team specialties={specialties} />}
-            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
+            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
       </div>
@@ -1497,22 +1539,31 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport }) {
   const [mode, setMode] = useState('kanban');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
+  const [numQuery, setNumQuery] = useState('');
+  const [stateFilter, setStateFilter] = useState('all');
+  const [clientFilter, setClientFilter] = useState('all');
 
   useEffect(()=>{ if (pendingNew) { setShowNew(true); clearPendingNew(); } }, [pendingNew]);
 
   const q = (search||'').trim().toLowerCase();
+  const numMatch = parseNumberQuery(numQuery);
   const filtered = samples.filter(s=>{
     if (filter!=='all' && s.spec!==filter) return false;
+    if (stateFilter!=='all' && s.state!==stateFilter) return false;
+    if (clientFilter!=='all' && s.client!==clientFilter) return false;
+    if (numMatch && !numMatch(s.n)) return false;
     const client = clientById(clients, s.client)?.name || '';
     if (q && !(`${s.id} ${s.caseCode||''} ${s.patient} ${s.type} ${s.ref} ${s.tech} ${client} ${s.notes||''}`.toLowerCase().includes(q))) return false;
     return true;
   });
   const cols = ['recibida','tallado','procesando','diagnostico','validado'];
+  const anyAdvancedFilter = numQuery.trim() || stateFilter!=='all' || clientFilter!=='all';
+  const clearAdvanced = () => { setNumQuery(''); setStateFilter('all'); setClientFilter('all'); };
 
   return (
     <div>
@@ -1539,6 +1590,20 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
             ))}
           </div>
           {q && <span className="search-chip" style={{marginLeft:'auto'}}>{I.search} “{search}” <button onClick={()=>setSearch('')}>×</button></span>}
+        </div>
+        <div className="card-head" style={{padding:'10px 16px',borderTop:'1px solid var(--line)',flexWrap:'wrap',gap:10}}>
+          <div className="field" style={{margin:0,minWidth:190}}>
+            <input className="field-input" placeholder="Nº de muestra: 921, 921-926…" value={numQuery} onChange={e=>setNumQuery(e.target.value)}/>
+          </div>
+          <select className="field-input" style={{maxWidth:170}} value={stateFilter} onChange={e=>setStateFilter(e.target.value)}>
+            <option value="all">Todos los estados</option>
+            {Object.keys(STATES).map(k=><option key={k} value={k}>{STATES[k].label}</option>)}
+          </select>
+          <select className="field-input" style={{maxWidth:220}} value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
+            <option value="all">Todos los clientes / mútuas</option>
+            {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          {anyAdvancedFilter && <button className="btn btn-ghost btn-sm" onClick={clearAdvanced}>Limpiar filtros</button>}
         </div>
       </div>
 
@@ -1613,7 +1678,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
       )}
 
       {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} setSelected={setSelected} onOpenReport={onOpenReport} />}
-      {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} />}
+      {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} />}
     </div>
   );
 }
@@ -1663,7 +1728,8 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
           <div className="detail-grid" style={{marginTop:18}}>
             <div className="detail-item"><div className="di-label">Paciente</div><div className="di-val">{s.patient}</div></div>
             <div className="detail-item"><div className="di-label">Edad / Sexo</div><div className="di-val">{s.age} años · {s.sex==='M'?'Mujer':'Hombre'}</div></div>
-            <div className="detail-item"><div className="di-label">Cliente / mútua</div><div className="di-val">{client?.name || s.ref}{client && client.discount>0 && <span style={{color:'var(--text-3)',fontWeight:500}}> · dto. {client.discount}%</span>}</div></div>
+            <div className="detail-item"><div className="di-label">Centro médico</div><div className="di-val">{client?.name || s.ref}{client && client.discount>0 && <span style={{color:'var(--text-3)',fontWeight:500}}> · dto. {client.discount}%</span>}</div></div>
+            <div className="detail-item"><div className="di-label">Mútua / aseguradora</div><div className="di-val">{s.insurer || <span style={{color:'var(--text-3)',fontStyle:'italic'}}>Particular / sin especificar</span>}</div></div>
             <div className="detail-item"><div className="di-label">Médico solicitante</div><div className="di-val">{s.ref}</div></div>
             <div className="detail-item"><div className="di-label">Tipo de muestra</div><div className="di-val">{s.tipo} · {TIPOS[s.tipo]?.label}</div></div>
             <div className="detail-item"><div className="di-label">Nº de botes</div><div className="di-val">{s.pots} {s.pots===1?'bote':'botes'} ({letters.map(l=>`${s.caseCode}-${l}`).join(', ')})</div></div>
@@ -1728,8 +1794,16 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
   );
 }
 
-function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSpecialty }) {
-  const [f, setF] = useState({ type:'', patient:'', age:'', sex:'M', clientName:clients[0]?.name||'', ref:'', tipo:'B', pots:1, spec:Object.keys(specialties)[0]||'', urgent:false });
+function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, lastReception, pinReception, setPinReception }) {
+  const pinned = pinReception && lastReception;
+  const pinnedClientName = pinned ? (clientById(clients, lastReception.client)?.name || '') : '';
+  const [f, setF] = useState({
+    type:'', patient:'', age:'', sex:'M',
+    clientName: pinned ? pinnedClientName : (clients[0]?.name||''),
+    insurer: pinned ? (lastReception.insurer||'') : '',
+    ref: pinned ? (lastReception.ref||'') : '',
+    tipo:'B', pots:1, spec:Object.keys(specialties)[0]||'', urgent:false,
+  });
   const set = (k,v) => setF(p=>({...p,[k]:v}));
   const valid = f.type.trim() && f.patient.trim() && f.age && f.clientName.trim() && f.spec.trim();
 
@@ -1738,6 +1812,7 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
   const isNewSpec = f.spec.trim() && !specialties[f.spec.trim()];
   const previewCode = `25${f.tipo}${CASE_SEQ}`;
   const letters = potLetters(f.pots);
+  const setPots = (n) => set('pots', Math.max(1, Math.min(12, Number(n)||1)));
 
   const submit = () => {
     if (!valid) return;
@@ -1745,8 +1820,8 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
     const caseNo = CASE_SEQ++;
 
-    // Cliente y especialidad son campos abiertos: si lo escrito no existe todavía
-    // en el CRM del laboratorio, se da de alta aquí mismo con este registro.
+    // Cliente, especialidad, mútua y médico son campos abiertos: si lo escrito no
+    // existe todavía en el laboratorio, se da de alta aquí mismo con este registro.
     let clientId = matchedClient?.id;
     if (!clientId) {
       clientId = uid('cli');
@@ -1754,11 +1829,13 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
     }
     const specName = f.spec.trim();
     if (!specialties[specName]) addSpecialty(specName);
+    if (f.insurer.trim()) addInsurer(f.insurer.trim());
+    if (f.ref.trim()) addDoctor(f.ref.trim());
 
     const ns = mkSample({
       n: ++SID, caseNo, tipo:f.tipo, client:clientId, pots:Number(f.pots)||1,
       type:f.type.trim(), patient:f.patient.trim(), age:Number(f.age), sex:f.sex,
-      ref:f.ref.trim()||matchedClient?.name||f.clientName.trim(), spec:specName, tech: PATHOLOGISTS.find(p=>p.spec===specName)?.name || 'Por asignar',
+      insurer:f.insurer.trim(), ref:f.ref.trim()||matchedClient?.name||f.clientName.trim(), spec:specName, tech: PATHOLOGISTS.find(p=>p.spec===specName)?.name || 'Por asignar',
       state:'recibida', urgent:f.urgent, received:`28/06 ${hh}:${mm}`, blocks:0, slides:0
     });
     onAdd(ns);
@@ -1785,12 +1862,32 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
           </div>
 
           <div className="new-sample-grid">
+            <div className="field full" style={{marginBottom:pinned?0:undefined}}>
+              <label style={{display:'flex',alignItems:'center',gap:8,cursor: lastReception ? 'pointer' : 'default',fontSize:12.5,color:'var(--text-2)',marginBottom:10}}>
+                <input type="checkbox" checked={pinReception} disabled={!lastReception} onChange={e=>setPinReception(e.target.checked)} style={{width:14,height:14}}/>
+                Usar el mismo centro, mútua y médico que en la última muestra registrada
+                {!lastReception && <span style={{color:'var(--text-3)'}}> (todavía no hay ninguna en esta sesión)</span>}
+              </label>
+            </div>
+
             <div className="field full">
-              <label className="field-label">Cliente / mútua *</label>
-              <input className="field-input" list="clients-dl" placeholder="Escribe o elige un hospital, clínica o mútua…" value={f.clientName} onChange={e=>set('clientName',e.target.value)}/>
+              <label className="field-label">Centro médico / cliente *</label>
+              <input className="field-input" list="clients-dl" placeholder="Escribe o elige un hospital, clínica o centro derivador…" value={f.clientName} onChange={e=>set('clientName',e.target.value)}/>
               <datalist id="clients-dl">{clients.map(c=><option key={c.id} value={c.name}/>)}</datalist>
               {matchedClient && matchedClient.discount>0 && <div className="field-note ok">Cliente existente · descuento {matchedClient.discount}% ya aplicado.</div>}
+              {matchedClient && matchedClient.internalCode && <div className="field-note">Nº interno de este centro: <strong>{matchedClient.internalCode}</strong></div>}
               {isNewClient && <div className="field-note new">Es un cliente nuevo: se dará de alta con este registro (sin descuento; edítalo luego en «Clientes y tarifas»).</div>}
+            </div>
+
+            <div className="field">
+              <label className="field-label">Mútua / aseguradora (opcional)</label>
+              <input className="field-input" list="insurers-dl" placeholder="Axa, Sanitas… o particular" value={f.insurer} onChange={e=>set('insurer',e.target.value)}/>
+              <datalist id="insurers-dl">{insurers.map(i=><option key={i} value={i}/>)}</datalist>
+            </div>
+            <div className="field">
+              <label className="field-label">Médico solicitante (opcional)</label>
+              <input className="field-input" list="doctors-dl" placeholder="Dr. / Dra. …" value={f.ref} onChange={e=>set('ref',e.target.value)}/>
+              <datalist id="doctors-dl">{doctors.map(d=><option key={d} value={d}/>)}</datalist>
             </div>
 
             <div className="field full">
@@ -1808,7 +1905,11 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
 
             <div className="field">
               <label className="field-label">Nº de botes / muestras *</label>
-              <input className="field-input" type="number" min="1" max="12" value={f.pots} onChange={e=>set('pots',Math.max(1,Math.min(12,Number(e.target.value)||1)))}/>
+              <div style={{display:'flex',alignItems:'stretch',gap:6}}>
+                <button type="button" className="btn btn-ghost btn-sm" style={{width:34}} onClick={()=>setPots(f.pots-1)} disabled={f.pots<=1} aria-label="Restar bote">−</button>
+                <input className="field-input" style={{textAlign:'center'}} type="number" min="1" max="12" value={f.pots} onChange={e=>setPots(e.target.value)}/>
+                <button type="button" className="btn btn-ghost btn-sm" style={{width:34}} onClick={()=>setPots(f.pots+1)} disabled={f.pots>=12} aria-label="Sumar bote">+</button>
+              </div>
             </div>
             <div className="field">
               <label className="field-label">Especialidad</label>
@@ -1833,10 +1934,6 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
               </div>
             </div>
 
-            <div className="field full">
-              <label className="field-label">Médico solicitante (opcional)</label>
-              <input className="field-input" placeholder="Dr. / Dra. …" value={f.ref} onChange={e=>set('ref',e.target.value)}/>
-            </div>
             <div className="field full" style={{marginBottom:0}}>
               <label style={{display:'flex',alignItems:'center',gap:9,cursor:'pointer',fontSize:13,fontWeight:500}}>
                 <input type="checkbox" checked={f.urgent} onChange={e=>set('urgent',e.target.checked)} style={{width:16,height:16,accentColor:'var(--red)'}}/>
@@ -2473,7 +2570,7 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
               <span className="cc-ico">{GL.building}</span>
               <div style={{flex:1,minWidth:0}}>
                 <div className="cc-name">{c.name}</div>
-                <div className="cc-type">{c.type}</div>
+                <div className="cc-type">{c.type}{c.internalCode ? ` · nº interno ${c.internalCode}` : ''}</div>
               </div>
               <span className={`cc-dto${c.discount===0?' zero':''}`}>{c.discount>0?`−${c.discount}%`:'Sin dto.'}</span>
               <div className="cc-actions">
@@ -2543,6 +2640,7 @@ function ClientModal({ client, onClose, onSave }) {
     rateB: client?.rate?.B ?? 100,
     rateC: client?.rate?.C ?? 60,
     rateP: client?.rate?.P ?? 75,
+    internalCode: client?.internalCode || '',
   }));
   const set = (k,v) => setF(p=>({...p,[k]:v}));
   const valid = f.name.trim().length > 0;
@@ -2554,6 +2652,7 @@ function ClientModal({ client, onClose, onSave }) {
       type: f.type.trim() || 'Cliente',
       discount: Math.max(0, Math.min(100, Number(f.discount)||0)),
       rate: { B: Number(f.rateB)||0, C: Number(f.rateC)||0, P: Number(f.rateP)||0 },
+      internalCode: f.internalCode.trim(),
     });
   };
 
@@ -2580,7 +2679,10 @@ function ClientModal({ client, onClose, onSave }) {
               <label className="field-label">Descuento (%)</label>
               <input className="field-input" type="number" min="0" max="100" value={f.discount} onChange={e=>set('discount',e.target.value)}/>
             </div>
-            <div className="field"></div>
+            <div className="field">
+              <label className="field-label">Nº interno del centro (opcional)</label>
+              <input className="field-input" placeholder="p. ej. 6421" value={f.internalCode} onChange={e=>set('internalCode',e.target.value)}/>
+            </div>
             <div className="field">
               <label className="field-label">Tarifa Biopsia (€)</label>
               <input className="field-input" type="number" min="0" value={f.rateB} onChange={e=>set('rateB',e.target.value)}/>
