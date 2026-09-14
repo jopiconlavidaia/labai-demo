@@ -26,3 +26,16 @@ que apunte ahí en vez de al Worker antiguo.
 Si el dominio de GitHub Pages cambia, actualiza también `ALLOWED_ORIGINS`
 en `labai-ia-worker.js` antes de desplegar — si no, el navegador bloqueará
 las peticiones por CORS aunque el Worker funcione.
+
+## Validación de la demo
+
+El Worker rechaza orígenes no autorizados, peticiones de más de 64.000 bytes,
+mensajes inválidos y límites de generación fuera de rango. El proveedor tiene
+un tiempo máximo de 25 segundos. Ejecuta `npm test` desde la raíz para probarlo
+con respuestas simuladas y sin usar una clave real.
+
+La comprobación de Origin no sustituye la autenticación: un cliente externo
+puede falsificar esa cabecera. Antes de ofrecer acceso real hacen falta
+autorización y límites de consumo. No añadas una clave secreta al HTML.
+La copia local no está autorizada por defecto; no se ha ampliado el acceso
+del proxy de producción para las pruebas.
