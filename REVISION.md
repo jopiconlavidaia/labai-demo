@@ -1,6 +1,8 @@
 # Revisión de la demo de BCN Patòlegs
 
-Fecha: 14 de septiembre de 2026. Cambios locales; no publicados en GitHub Pages ni en Cloudflare.
+Fecha: 14 de septiembre de 2026. Correcciones publicadas en GitHub Pages y Worker de Cloudflare actualizado (versión 9add8dae).
+
+Comprobación real del Worker: HTTP 200, origen CORS correcto y respuesta `OK` sin datos personales. Se detectó que el sondeo original de 3 tokens agotaba el límite antes de producir contenido; se amplió a 200 tokens y una petición explícita de respuesta breve.
 
 Actualización de repositorio: revisión trasladada a `jopiconlavidaia/labai-demo`, sobre el commit `2e450b3`. La única diferencia respecto a la base anterior era el nuevo origen CORS; se ha conservado `https://jopiconlavidaia.github.io` y se han actualizado sus pruebas. El usuario confirma que no existe otra base de datos ni backend.
 

@@ -1546,7 +1546,7 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
-        await aiComplete(apiKey, { messages: [{ role: 'user', content: 'ping' }], max_tokens: 3, temperature: 0 });
+        await aiComplete(apiKey, { messages: [{ role: 'user', content: 'Responde solo OK.' }], max_tokens: 200, temperature: 0 });
         if (!cancelled) setAiStatus('ok');
       } catch (e) {
         if (!cancelled) setAiStatus('error');
