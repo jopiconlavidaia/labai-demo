@@ -345,7 +345,10 @@
     padding: 12px 13px; transition: all 0.14s; cursor: pointer; box-shadow: var(--shadow-sm);
   }
   .scard:hover { border-color: var(--brand-500); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+  .scard-picked { border-color: var(--brand-500); background: var(--brand-50); }
+  .scard-check { width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
   .scard-top { display: flex; align-items: center; gap: 6px; }
+  tr.row-picked td { background: var(--brand-50); }
   .scard-id { font-size: 11px; font-weight: 700; color: var(--brand-700); letter-spacing: 0.4px; font-family: 'Inter'; }
   .scard-urgent { margin-left: auto; font-size: 9px; font-weight: 800; letter-spacing: 0.5px; background: var(--red-bg); color: var(--red); padding: 2px 6px; border-radius: 5px; }
   .scard-name { font-size: 13.5px; font-weight: 700; margin: 6px 0 3px; letter-spacing: -0.2px; }
@@ -1367,7 +1370,8 @@ const I18N = {
     'samples.printLabels':'Imprimir etiquetas', 'samples.newSample':'Nueva muestra',
     'samples.flow':'Flujo', 'samples.table':'Tabla', 'samples.all':'Todas',
     'samples.numPlaceholder':'Nº de muestra: 921, 921-926…',
-    'samples.allStates':'Todos los estados', 'samples.allClients':'Todos los clientes / mútuas', 'samples.clearFilters':'Limpiar filtros',
+    'samples.allStates':'Todos los estados', 'samples.allClients':'Todos los clientes / mútuas', 'samples.clearFilters':'Limpiar filtros', 'samples.filters':'Filtros',
+    'samples.selected':'seleccionadas', 'samples.selectAllVisible':'Seleccionar todas', 'samples.clearSelection':'Deseleccionar todo', 'samples.printSelected':'Imprimir etiquetas', 'samples.createDocSelected':'Crear documento', 'samples.mixedClients':'Solo si son del mismo cliente/mútua',
     'samples.colCode':'Código','samples.colType':'Tipo','samples.colSample':'Muestra','samples.colPatient':'Paciente','samples.colClient':'Cliente / mútua','samples.colSpec':'Especialidad','samples.colState':'Estado','samples.colReceived':'Recepción',
     'samples.emptyTitle':'Sin resultados', 'samples.emptyDesc':'No hay muestras que coincidan con los filtros o la búsqueda actual.', 'samples.clearSearch':'Limpiar búsqueda',
     'samples.noneInCol':'Sin muestras',
@@ -1417,7 +1421,8 @@ const I18N = {
     'samples.printLabels':'Imprimir etiquetes', 'samples.newSample':'Nova mostra',
     'samples.flow':'Flux', 'samples.table':'Taula', 'samples.all':'Totes',
     'samples.numPlaceholder':'Núm. de mostra: 921, 921-926…',
-    'samples.allStates':'Tots els estats', 'samples.allClients':'Tots els clients / mútues', 'samples.clearFilters':'Netejar filtres',
+    'samples.allStates':'Tots els estats', 'samples.allClients':'Tots els clients / mútues', 'samples.clearFilters':'Netejar filtres', 'samples.filters':'Filtres',
+    'samples.selected':'seleccionades', 'samples.selectAllVisible':'Seleccionar totes', 'samples.clearSelection':'Desseleccionar-ho tot', 'samples.printSelected':'Imprimir etiquetes', 'samples.createDocSelected':'Crear document', 'samples.mixedClients':'Només si són del mateix client/mútua',
     'samples.colCode':'Codi','samples.colType':'Tipus','samples.colSample':'Mostra','samples.colPatient':'Pacient','samples.colClient':'Client / mútua','samples.colSpec':'Especialitat','samples.colState':'Estat','samples.colReceived':'Recepció',
     'samples.emptyTitle':'Sense resultats', 'samples.emptyDesc':'No hi ha mostres que coincideixin amb els filtres o la cerca actual.', 'samples.clearSearch':'Netejar cerca',
     'samples.noneInCol':'Sense mostres',
@@ -1467,7 +1472,8 @@ const I18N = {
     'samples.printLabels':'Print labels', 'samples.newSample':'New sample',
     'samples.flow':'Flow', 'samples.table':'Table', 'samples.all':'All',
     'samples.numPlaceholder':'Sample no.: 921, 921-926…',
-    'samples.allStates':'All states', 'samples.allClients':'All clients / insurers', 'samples.clearFilters':'Clear filters',
+    'samples.allStates':'All states', 'samples.allClients':'All clients / insurers', 'samples.clearFilters':'Clear filters', 'samples.filters':'Filters',
+    'samples.selected':'selected', 'samples.selectAllVisible':'Select all', 'samples.clearSelection':'Clear selection', 'samples.printSelected':'Print labels', 'samples.createDocSelected':'Create document', 'samples.mixedClients':'Only if they share the same client/insurer',
     'samples.colCode':'Code','samples.colType':'Type','samples.colSample':'Sample','samples.colPatient':'Patient','samples.colClient':'Client / insurer','samples.colSpec':'Specialty','samples.colState':'Status','samples.colReceived':'Received',
     'samples.emptyTitle':'No results', 'samples.emptyDesc':'No samples match the current filters or search.', 'samples.clearSearch':'Clear search',
     'samples.noneInCol':'No samples',
@@ -1544,6 +1550,13 @@ function App() {
   const [pinReception, setPinReception] = useState(false);
   const [toast, setToast] = useState(null);
   const [search, setSearch] = useState('');
+  // Filtros de muestras compartidos entre el buscador principal (topbar, visible
+  // en toda la app) y la propia página de Muestras — se editan desde cualquiera
+  // de los dos sitios y afectan al mismo resultado, no hace falta ir a Muestras
+  // primero para poder filtrar.
+  const [sampleFilters, setSampleFilters] = useState({ spec:'all', state:'all', client:'all', insurer:'all', tipo:'all', numQuery:'' });
+  const patchSampleFilters = (patch) => setSampleFilters(prev => ({ ...prev, ...patch }));
+  const clearSampleFilters = () => setSampleFilters({ spec:'all', state:'all', client:'all', insurer:'all', tipo:'all', numQuery:'' });
   const [pendingNewSample, setPendingNewSample] = useState(false);
   const [reportSampleId, setReportSampleId] = useState(null);
   // Acceso directo a Administración desde otras secciones (cliente, muestra),
@@ -1714,13 +1727,15 @@ function App() {
       <Sidebar view={view} setView={setView} samples={samples} adminDocs={adminDocs} staffRequests={staffRequests} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       <div className="main">
         <Topbar title={titles[view]||['']} aiLive={aiLive} onGuide={() => setShowGuide(true)}
-                samples={samples} search={search} setSearch={setSearch} onSubmitSearch={submitSearch} onNavigate={setView}
+                samples={samples} clients={clients} insurers={insurers} specialties={specialties}
+                search={search} setSearch={setSearch} onSubmitSearch={submitSearch} onNavigate={setView}
+                sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters}
                 onToggleNav={() => setMobileNavOpen(v => !v)} />
         <div className="content">
           <p style={{fontSize:12,color:'var(--text-2)',margin:'0 0 12px'}}>Demo · Usa solo datos ficticios. Las muestras y documentos se reinician al recargar; la configuración se guarda en este navegador.</p>
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
             {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
@@ -1807,26 +1822,68 @@ function Sidebar({ view, setView, samples, adminDocs=[], staffRequests=[], mobil
 }
 
 /* ════════════════ TOPBAR ════════════════ */
-function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSearch, onNavigate, onToggleNav }) {
+function Topbar({ title, aiLive, onGuide, samples, clients, insurers, specialties, search, setSearch, onSubmitSearch, onNavigate, sampleFilters, patchSampleFilters, clearSampleFilters, onToggleNav }) {
   const { t, lang, setLang } = useT();
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const urgent = samples.filter(s=>s.urgent && s.state!=='validado');
   const notifs = [
     ...urgent.map(s=>({ ico:GL.alert, bg:'red', t:`Caso urgente: ${s.id}`, s:`${s.type} · ${s.patient}` })),
     { ico:GL.cpu, bg:'teal', t:'Borrador IA generado', s:'BP-25-00923 · listo para revisar' },
     { ico:GL.inbox, bg:'slate', t:'8 muestras recibidas', s:'Hospital del Mar · valija 14:00' },
   ];
+  // Filtros del buscador principal: los mismos que en Muestras, pero accesibles
+  // desde cualquier pantalla — no hace falta ir primero a Muestras para filtrar.
+  const anyTopFilter = sampleFilters.numQuery.trim() || sampleFilters.state!=='all' || sampleFilters.client!=='all' || sampleFilters.insurer!=='all' || sampleFilters.tipo!=='all' || sampleFilters.spec!=='all';
+  const runSearch = () => { setFiltersOpen(false); setNotifOpen(false); setUserOpen(false); onSubmitSearch(search); };
   return (
     <header className="topbar">
       <button className="icon-btn hamburger-btn" onClick={onToggleNav} aria-label={t('topbar.menu')}><Ico d={<><path d="M3 6h18M3 12h18M3 18h18"/></>} size={18} sw={2}/></button>
       <div className="breadcrumb">
         <span className="crumb-main">{title[0]}</span>
       </div>
-      <form className="topbar-search" onSubmit={e=>{ e.preventDefault(); onSubmitSearch(search); }}>
-        <span className="search-ico">{I.search}</span>
-        <input placeholder={t('topbar.search')} value={search} onChange={e=>setSearch(e.target.value)} />
+      <form className="topbar-search" onSubmit={e=>{ e.preventDefault(); runSearch(); }} style={{display:'flex',alignItems:'center',gap:6,maxWidth:420}}>
+        <div style={{position:'relative',flex:1,minWidth:0}}>
+          <span className="search-ico">{I.search}</span>
+          <input style={{width:'100%'}} placeholder={t('topbar.search')} value={search} onChange={e=>setSearch(e.target.value)} />
+        </div>
+        <div style={{position:'relative'}}>
+          <button type="button" className="icon-btn" style={{flex:'none'}} title={t('samples.filters')} aria-label={t('samples.filters')}
+            onClick={()=>{setFiltersOpen(o=>!o); setNotifOpen(false); setUserOpen(false); setLangOpen(false);}}>
+            {anyTopFilter && <span className="dot-alert"></span>}{I.filter}
+          </button>
+          {filtersOpen && <Portal><div className="pop-backdrop" onClick={()=>setFiltersOpen(false)}/></Portal>}
+          {filtersOpen && (
+            <div className="popover" style={{width:280,padding:'12px'}}>
+              <div className="section-title" style={{marginTop:0}}>{t('samples.filters')}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                <input className="field-input" placeholder={t('samples.numPlaceholder')} value={sampleFilters.numQuery} onChange={e=>patchSampleFilters({numQuery:e.target.value})}/>
+                <select className="field-input" value={sampleFilters.tipo} onChange={e=>patchSampleFilters({tipo:e.target.value})}>
+                  <option value="all">Todos los tipos</option>
+                  {Object.keys(TIPOS).map(k=><option key={k} value={k}>{k} · {TIPOS[k].label}</option>)}
+                </select>
+                <select className="field-input" value={sampleFilters.spec} onChange={e=>patchSampleFilters({spec:e.target.value})}>
+                  <option value="all">{t('samples.all')}</option>
+                  {Object.keys(specialties).map(sp=><option key={sp} value={sp}>{specialties[sp].short} · {sp}</option>)}
+                </select>
+                <select className="field-input" value={sampleFilters.client} onChange={e=>patchSampleFilters({client:e.target.value})}>
+                  <option value="all">{t('samples.allClients')}</option>
+                  {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select className="field-input" value={sampleFilters.insurer} onChange={e=>patchSampleFilters({insurer:e.target.value})}>
+                  <option value="all">Todas las mútuas</option>
+                  {insurers.map(i=><option key={i} value={i}>{i}</option>)}
+                </select>
+                <div style={{display:'flex',gap:8,marginTop:4}}>
+                  {anyTopFilter && <button type="button" className="btn btn-ghost btn-sm" onClick={clearSampleFilters}>{t('samples.clearFilters')}</button>}
+                  <button type="button" className="btn btn-primary btn-sm" style={{flex:1}} onClick={runSearch}>{I.search} {t('topbar.search')}</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </form>
       <div className="topbar-right">
         <div style={{position:'relative'}}>
@@ -2031,19 +2088,17 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, pendingNew, clearPendingNew, onOpenReport, onOpenAdmin }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, sampleFilters, patchSampleFilters, clearSampleFilters, pendingNew, clearPendingNew, onOpenReport, onOpenAdmin }) {
   const { t, lang } = useT();
   const [mode, setMode] = useState('kanban');
-  const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
-  const [numQuery, setNumQuery] = useState('');
-  const [stateFilter, setStateFilter] = useState('all');
-  const [clientFilter, setClientFilter] = useState('all');
-  const [insurerFilter, setInsurerFilter] = useState('all');
-  const [tipoFilter, setTipoFilter] = useState('all');
+  const [showSelectionLabels, setShowSelectionLabels] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const pendingLabels = samples.filter(s=>!s.labelsPrinted);
+  const { spec: filter, state: stateFilter, client: clientFilter, insurer: insurerFilter, tipo: tipoFilter, numQuery } = sampleFilters;
+  const setFilter = (v) => patchSampleFilters({spec:v});
 
   useEffect(()=>{ if (pendingNew) { setShowNew(true); clearPendingNew(); } }, [pendingNew]);
 
@@ -2066,7 +2121,16 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
   if (numOrder.length) filtered = [...filtered].sort((a,b)=>numOrder.indexOf(a.n)-numOrder.indexOf(b.n));
   const cols = ['recibida','tallado','procesando','diagnostico','validado'];
   const anyAdvancedFilter = numQuery.trim() || stateFilter!=='all' || clientFilter!=='all' || insurerFilter!=='all' || tipoFilter!=='all';
-  const clearAdvanced = () => { setNumQuery(''); setStateFilter('all'); setClientFilter('all'); setInsurerFilter('all'); setTipoFilter('all'); };
+  const clearAdvanced = clearSampleFilters;
+
+  // Selección múltiple: marcar varias muestras para una acción en bloque
+  // (imprimir etiquetas o crear un documento de Administración con todas a la vez).
+  const toggleSelect = (id) => setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const clearSelection = () => setSelectedIds(new Set());
+  const selectAllVisible = () => setSelectedIds(new Set(filtered.map(s=>s.id)));
+  const selectedSamples = samples.filter(s=>selectedIds.has(s.id));
+  const selectedClientIds = [...new Set(selectedSamples.map(s=>s.client))];
+  const canCreateDocFromSelection = selectedSamples.length>0 && selectedClientIds.length===1;
 
   return (
     <div>
@@ -2097,27 +2161,38 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
         </div>
         <div className="card-head" style={{padding:'10px 16px',borderTop:'1px solid var(--line)',flexWrap:'wrap',gap:10}}>
           <div className="field" style={{margin:0,minWidth:190}}>
-            <input className="field-input" placeholder={t('samples.numPlaceholder')} value={numQuery} onChange={e=>setNumQuery(e.target.value)}/>
+            <input className="field-input" placeholder={t('samples.numPlaceholder')} value={numQuery} onChange={e=>patchSampleFilters({numQuery:e.target.value})}/>
           </div>
-          <select className="field-input" style={{maxWidth:170}} value={stateFilter} onChange={e=>setStateFilter(e.target.value)}>
+          <select className="field-input" style={{maxWidth:170}} value={stateFilter} onChange={e=>patchSampleFilters({state:e.target.value})}>
             <option value="all">{t('samples.allStates')}</option>
             {Object.keys(STATES).map(k=><option key={k} value={k}>{stateLabelT(lang,k)}</option>)}
           </select>
-          <select className="field-input" style={{maxWidth:220}} value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
+          <select className="field-input" style={{maxWidth:220}} value={clientFilter} onChange={e=>patchSampleFilters({client:e.target.value})}>
             <option value="all">{t('samples.allClients')}</option>
             {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select className="field-input" style={{maxWidth:180}} value={insurerFilter} onChange={e=>setInsurerFilter(e.target.value)}>
+          <select className="field-input" style={{maxWidth:180}} value={insurerFilter} onChange={e=>patchSampleFilters({insurer:e.target.value})}>
             <option value="all">Todas las mútuas</option>
             {insurers.map(i=><option key={i} value={i}>{i}</option>)}
           </select>
-          <select className="field-input" style={{maxWidth:150}} value={tipoFilter} onChange={e=>setTipoFilter(e.target.value)}>
+          <select className="field-input" style={{maxWidth:150}} value={tipoFilter} onChange={e=>patchSampleFilters({tipo:e.target.value})}>
             <option value="all">Todos los tipos</option>
             {Object.keys(TIPOS).map(k=><option key={k} value={k}>{k} · {TIPOS[k].label}</option>)}
           </select>
           {anyAdvancedFilter && <button className="btn btn-ghost btn-sm" onClick={clearAdvanced}>{t('samples.clearFilters')}</button>}
         </div>
       </div>
+
+      {selectedIds.size>0 && (
+        <div className="card" style={{marginBottom:16,padding:'10px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:'var(--brand-50)',borderColor:'var(--brand-500)'}}>
+          <strong style={{fontSize:13}}>{selectedIds.size} {t('samples.selected')}</strong>
+          <button className="btn btn-soft btn-sm" onClick={()=>setShowSelectionLabels(true)}>{GL.tag} {t('samples.printSelected')}</button>
+          <button className="btn btn-soft btn-sm" disabled={!canCreateDocFromSelection} title={!canCreateDocFromSelection?t('samples.mixedClients'):''}
+            onClick={()=>onOpenAdmin && onOpenAdmin({ clientId:selectedClientIds[0], sampleIds:[...selectedIds], openNew:true })}>{I.admin} {t('samples.createDocSelected')}</button>
+          <button className="btn btn-sm" onClick={selectAllVisible}>{t('samples.selectAllVisible')} ({filtered.length})</button>
+          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={clearSelection}>{t('samples.clearSelection')}</button>
+        </div>
+      )}
 
       {mode==='kanban' ? (
         <div className="kanban">
@@ -2134,8 +2209,9 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
                   {items.map(s=>{
                     const [bg,fg] = specStyle(specialties, s.spec);
                     return (
-                      <div className="scard" key={s.id} onClick={()=>setSelected(s)}>
+                      <div className={`scard${selectedIds.has(s.id)?' scard-picked':''}`} key={s.id} onClick={()=>setSelected(s)}>
                         <div className="scard-top">
+                          <input type="checkbox" className="scard-check" checked={selectedIds.has(s.id)} onClick={e=>e.stopPropagation()} onChange={()=>toggleSelect(s.id)}/>
                           <span className="scard-id">{s.caseCode}{s.pots>1?` · ${s.pots} botes`:''}</span>
                           {s.urgent && <span className="scard-urgent">URGENTE</span>}
                         </div>
@@ -2161,13 +2237,15 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
           <div className="tbl-wrap">
             <table className="tbl">
               <thead><tr>
+                <th style={{width:32}}><input type="checkbox" checked={filtered.length>0 && filtered.every(s=>selectedIds.has(s.id))} onChange={()=>{ filtered.every(s=>selectedIds.has(s.id)) ? clearSelection() : selectAllVisible(); }}/></th>
                 <th>{t('samples.colCode')}</th><th>{t('samples.colType')}</th><th>{t('samples.colSample')}</th><th>{t('samples.colPatient')}</th><th>{t('samples.colClient')}</th><th>{t('samples.colSpec')}</th><th>{t('samples.colState')}</th><th>{t('samples.colReceived')}</th>
               </tr></thead>
               <tbody>
                 {filtered.map(s=>{
                   const [sbg,sfg]=stateBg[s.state]; const [bg,fg]=specStyle(specialties, s.spec);
                   return (
-                    <tr key={s.id} onClick={()=>setSelected(s)}>
+                    <tr key={s.id} onClick={()=>setSelected(s)} className={selectedIds.has(s.id)?'row-picked':''}>
+                      <td onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(s.id)} onChange={()=>toggleSelect(s.id)}/></td>
                       <td><span className="mono">{s.caseCode}</span>{s.urgent && <span className="scard-urgent" style={{marginLeft:8}}>URG</span>}</td>
                       <td><span className="tipo-tag" title={TIPOS[s.tipo]?.label}>{s.tipo}</span></td>
                       <td style={{fontWeight:600,maxWidth:230}}>{s.type}{s.pots>1?<span style={{color:'var(--text-3)',fontWeight:500}}> · {s.pots} botes</span>:null}</td>
@@ -2192,6 +2270,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
       {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={onOpenAdmin} setSelected={setSelected} onOpenReport={onOpenReport} />}
       {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} />}
       {showLabels && <LabelsModal candidates={pendingLabels} onClose={()=>setShowLabels(false)} markPrinted={markLabelsPrinted} />}
+      {showSelectionLabels && <LabelsModal candidates={selectedSamples} onClose={()=>setShowSelectionLabels(false)} markPrinted={markLabelsPrinted} />}
     </div>
   );
 }
@@ -3501,6 +3580,7 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
   const [showNew, setShowNew] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [presetSampleId, setPresetSampleId] = useState(null);
+  const [presetSampleIds, setPresetSampleIds] = useState(null);
 
   useEffect(() => {
     if (!focus) return;
@@ -3510,7 +3590,10 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
     } else if (focus.clientId) {
       setClientFilter(focus.clientId);
       setSelectedId(null);
-      if (focus.sampleId) { setPresetSampleId(focus.sampleId); setType('factura'); }
+      // sampleIds (varias muestras seleccionadas a la vez) tiene prioridad sobre
+      // sampleId (una sola, desde "Crear factura con esta muestra").
+      if (focus.sampleIds && focus.sampleIds.length) { setPresetSampleIds(focus.sampleIds); setPresetSampleId(null); setType('factura'); }
+      else if (focus.sampleId) { setPresetSampleId(focus.sampleId); setPresetSampleIds(null); setType('factura'); }
       if (focus.openNew) setShowNew(true);
     }
     clearFocus();
@@ -3590,9 +3673,9 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
         )}
       </div>
 
-      {showNew && <DocModal type={type} clients={clients} samples={samples} presetClientId={clientFilter!=='all'?clientFilter:undefined} presetSampleId={presetSampleId}
-        onClose={()=>{setShowNew(false); setPresetSampleId(null);}}
-        onCreate={(doc)=>{ addAdminDoc(doc); setShowNew(false); setPresetSampleId(null); setSelectedId(doc.id); }} />}
+      {showNew && <DocModal type={type} clients={clients} samples={samples} presetClientId={clientFilter!=='all'?clientFilter:undefined} presetSampleId={presetSampleId} presetSampleIds={presetSampleIds}
+        onClose={()=>{setShowNew(false); setPresetSampleId(null); setPresetSampleIds(null);}}
+        onCreate={(doc)=>{ addAdminDoc(doc); setShowNew(false); setPresetSampleId(null); setPresetSampleIds(null); setSelectedId(doc.id); }} />}
 
       {selected && <DocDrawer doc={selected} clients={clients} onClose={()=>setSelectedId(null)}
         updateStatus={(status)=>updateAdminDoc(selected.id, {status})}
@@ -3608,13 +3691,16 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
   );
 }
 
-function DocModal({ type, clients, samples, presetClientId, presetSampleId, onClose, onCreate }) {
+function DocModal({ type, clients, samples, presetClientId, presetSampleId, presetSampleIds, onClose, onCreate }) {
   const { lang } = useT();
   const [clientId, setClientId] = useState(presetClientId || clients[0]?.id || '');
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
   const client = clientById(clients, clientId);
   const [lines, setLines] = useState(() => {
+    if (presetSampleIds && presetSampleIds.length) {
+      return presetSampleIds.map(id=>samples.find(x=>x.id===id)).filter(Boolean).map(s=>sampleToLine(client, s));
+    }
     if (presetSampleId) {
       const s = samples.find(x=>x.id===presetSampleId);
       if (s) return [sampleToLine(client, s)];
