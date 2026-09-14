@@ -374,6 +374,8 @@
     text-transform: uppercase; letter-spacing: 0.6px; padding: 11px 16px;
     border-bottom: 1px solid var(--border); background: var(--surface-2); white-space: nowrap;
   }
+  .tbl thead th.th-sort { cursor: pointer; user-select: none; }
+  .tbl thead th.th-sort:hover { color: var(--brand-700); }
   .tbl tbody td { padding: 13px 16px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
   .tbl tbody tr { transition: background 0.12s; cursor: pointer; }
   .tbl tbody tr:hover { background: var(--brand-50); }
@@ -1623,6 +1625,9 @@ function App() {
     if (!clean || techniques.includes(clean)) return;
     setTechniques(prev => [...prev, clean]);
   };
+  const removeTechnique = (name) => {
+    setTechniques(prev => prev.filter(t => t !== name));
+  };
   const addDiagnosisCode = (code, text) => {
     const clean = code.trim();
     if (!clean || diagnosisCodes[clean]) return;
@@ -1745,7 +1750,7 @@ function App() {
             {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={openAdminFor} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
             {view === 'team'      && <Team specialties={specialties} />}
-            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setAdminDocs(INITIAL_ADMIN_DOCS); ADMIN_SEQ={oferta:2,pedido:2,albaran:1,factura:2,proforma:1}; setStaff(DEFAULT_STAFF); setShifts(DEFAULT_SHIFTS); setStaffRequests([]); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
+            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} techniques={techniques} addTechnique={addTechnique} removeTechnique={removeTechnique} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setAdminDocs(INITIAL_ADMIN_DOCS); ADMIN_SEQ={oferta:2,pedido:2,albaran:1,factura:2,proforma:1}; setStaff(DEFAULT_STAFF); setShifts(DEFAULT_SHIFTS); setStaffRequests([]); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
       </div>
@@ -1838,6 +1843,22 @@ function Topbar({ title, aiLive, onGuide, samples, clients, insurers, specialtie
   // desde cualquier pantalla — no hace falta ir primero a Muestras para filtrar.
   const anyTopFilter = sampleFilters.numQuery.trim() || sampleFilters.state!=='all' || sampleFilters.client!=='all' || sampleFilters.insurer!=='all' || sampleFilters.tipo!=='all' || sampleFilters.spec!=='all';
   const runSearch = () => { setFiltersOpen(false); setNotifOpen(false); setUserOpen(false); onSubmitSearch(search); };
+
+  // Atajo "/" para saltar al buscador desde cualquier pantalla, sin pisar lo
+  // que se esté escribiendo en otro campo (inputs, textareas, editable).
+  const searchInputRef = useRef(null);
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <header className="topbar">
       <button className="icon-btn hamburger-btn" onClick={onToggleNav} aria-label={t('topbar.menu')}><Ico d={<><path d="M3 6h18M3 12h18M3 18h18"/></>} size={18} sw={2}/></button>
@@ -1847,7 +1868,7 @@ function Topbar({ title, aiLive, onGuide, samples, clients, insurers, specialtie
       <form className="topbar-search" onSubmit={e=>{ e.preventDefault(); runSearch(); }} style={{display:'flex',alignItems:'center',gap:6,maxWidth:420}}>
         <div style={{position:'relative',flex:1,minWidth:0}}>
           <span className="search-ico">{I.search}</span>
-          <input style={{width:'100%'}} placeholder={t('topbar.search')} value={search} onChange={e=>setSearch(e.target.value)} />
+          <input ref={searchInputRef} style={{width:'100%'}} placeholder={t('topbar.search')} value={search} onChange={e=>setSearch(e.target.value)} title="Atajo: pulsa / para saltar aquí" />
         </div>
         <div style={{position:'relative'}}>
           <button type="button" className="icon-btn" style={{flex:'none'}} title={t('samples.filters')} aria-label={t('samples.filters')}
@@ -1978,10 +1999,10 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
   const R = 54, C = 2*Math.PI*R;
 
   const stats = [
-    { ico:<Ico d={<><path d="M9 3h6M10 3v6.5L5.5 17a2 2 0 001.8 3h9.4a2 2 0 001.8-3L14 9.5V3"/><path d="M7.5 14h9"/></>}/>, bg:['var(--brand-50)','var(--brand-700)'], num:total, label:t('dash.statActive'), trend:t('dash.trendToday'), tc:'trend-up' },
-    { ico:<Ico d={<><path d="M10.3 3.9 1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/></>}/>, bg:['var(--red-bg)','var(--red)'], num:urgent, label:t('dash.statUrgent'), trend:t('dash.trendPriority'), tc:'trend-down' },
-    { ico:<Ico d={<><path d="M6 18h8M3 22h18M14 22a7 7 0 100-14h-1M9 14h2M9 12a2 2 0 01-2-2V6a2 2 0 012-2 2 2 0 012 2v4a2 2 0 01-2 2z"/></>}/>, bg:['#eef1f4','#5f7488'], num:inProc, label:t('dash.statProgress'), trend:t('dash.trendOngoing'), tc:'trend-flat' },
-    { ico:<Ico d={<><path d="M22 11.1V12a10 10 0 11-5.9-9.1"/><path d="M22 4 12 14l-3-3"/></>}/>, bg:['var(--green-bg)','var(--green)'], num:validated, label:t('dash.statValidated'), trend:t('dash.trendUp'), tc:'trend-up' },
+    { ico:<Ico d={<><path d="M9 3h6M10 3v6.5L5.5 17a2 2 0 001.8 3h9.4a2 2 0 001.8-3L14 9.5V3"/><path d="M7.5 14h9"/></>}/>, bg:['var(--brand-50)','var(--brand-700)'], num:total, label:t('dash.statActive'), trend:t('dash.trendToday'), tc:'trend-up', hint:'Todas las muestras activas, en cualquier fase del proceso.' },
+    { ico:<Ico d={<><path d="M10.3 3.9 1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/></>}/>, bg:['var(--red-bg)','var(--red)'], num:urgent, label:t('dash.statUrgent'), trend:t('dash.trendPriority'), tc:'trend-down', hint:'Casos marcados como urgentes que todavía no están validados.' },
+    { ico:<Ico d={<><path d="M6 18h8M3 22h18M14 22a7 7 0 100-14h-1M9 14h2M9 12a2 2 0 01-2-2V6a2 2 0 012-2 2 2 0 012 2v4a2 2 0 01-2 2z"/></>}/>, bg:['#eef1f4','#5f7488'], num:inProc, label:t('dash.statProgress'), trend:t('dash.trendOngoing'), tc:'trend-flat', hint:'Muestras en Inclusión, Procesamiento o Diagnóstico.' },
+    { ico:<Ico d={<><path d="M22 11.1V12a10 10 0 11-5.9-9.1"/><path d="M22 4 12 14l-3-3"/></>}/>, bg:['var(--green-bg)','var(--green)'], num:validated, label:t('dash.statValidated'), trend:t('dash.trendUp'), tc:'trend-up', hint:'Casos validados y cerrados por el patólogo.' },
   ];
 
   return (
@@ -1999,7 +2020,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 
       <div className="stat-grid">
         {stats.map((s,i)=>(
-          <div className="stat" key={i}>
+          <div className="stat" key={i} title={s.hint} style={{cursor:'pointer'}} onClick={()=>setView('samples')}>
             <div className="stat-top">
               <div className="stat-ico" style={{background:s.bg[0], color:s.bg[1]}}>{s.ico}</div>
               <span className={`stat-trend ${s.tc}`}>{s.trend}</span>
@@ -2096,6 +2117,12 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
   const [showLabels, setShowLabels] = useState(false);
   const [showSelectionLabels, setShowSelectionLabels] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d==='asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
   const pendingLabels = samples.filter(s=>!s.labelsPrinted);
   const { spec: filter, state: stateFilter, client: clientFilter, insurer: insurerFilter, tipo: tipoFilter, numQuery } = sampleFilters;
   const setFilter = (v) => patchSampleFilters({spec:v});
@@ -2119,6 +2146,27 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
   // Con números sueltos/rangos escritos a mano, se devuelve en ese mismo orden
   // (no en el orden interno de la lista) — "meto 921,3260-3262 y que salgan así".
   if (numOrder.length) filtered = [...filtered].sort((a,b)=>numOrder.indexOf(a.n)-numOrder.indexOf(b.n));
+  // Orden de la vista Tabla al pulsar una cabecera — no afecta al kanban ni a la
+  // selección, que no dependen del orden de "filtered".
+  const SORT_GETTERS = {
+    code: s => s.caseCode || '',
+    tipo: s => s.tipo || '',
+    type: s => s.type || '',
+    patient: s => s.patient || '',
+    client: s => clientById(clients, s.client)?.name || s.ref || '',
+    spec: s => specShort(specialties, s.spec) || '',
+    state: s => stateLabelT(lang, s.state) || '',
+    received: s => s.received || '',
+  };
+  let sortedRows = filtered;
+  if (sortKey) {
+    const getter = SORT_GETTERS[sortKey];
+    sortedRows = [...filtered].sort((a,b) => {
+      const cmp = String(getter(a)).localeCompare(String(getter(b)), 'es', {numeric:true, sensitivity:'base'});
+      return sortDir==='asc' ? cmp : -cmp;
+    });
+  }
+  const sortArrow = (key) => sortKey===key ? (sortDir==='asc'?' ▲':' ▼') : '';
   const cols = ['recibida','tallado','procesando','diagnostico','validado'];
   const anyAdvancedFilter = numQuery.trim() || stateFilter!=='all' || clientFilter!=='all' || insurerFilter!=='all' || tipoFilter!=='all';
   const clearAdvanced = clearSampleFilters;
@@ -2219,8 +2267,8 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
                         <div className="scard-patient">{GL.user} {s.patient}{s.age?` · ${s.age}a`:''}</div>
                         <div className="scard-client">{clientById(clients, s.client)?.name || s.ref}</div>
                         <div className="scard-foot">
-                          <span className="tipo-tag">{s.tipo}</span>
-                          <span className="spec-pill" style={{background:bg,color:fg}}>{specShort(specialties, s.spec)}</span>
+                          <span className="tipo-tag" title={TIPOS[s.tipo]?.label}>{s.tipo}</span>
+                          <span className="spec-pill" style={{background:bg,color:fg}} title={s.spec}>{specShort(specialties, s.spec)}</span>
                           <span className="scard-date">{s.received.split(' ')[0]}</span>
                         </div>
                       </div>
@@ -2238,10 +2286,17 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
             <table className="tbl">
               <thead><tr>
                 <th style={{width:32}}><input type="checkbox" checked={filtered.length>0 && filtered.every(s=>selectedIds.has(s.id))} onChange={()=>{ filtered.every(s=>selectedIds.has(s.id)) ? clearSelection() : selectAllVisible(); }}/></th>
-                <th>{t('samples.colCode')}</th><th>{t('samples.colType')}</th><th>{t('samples.colSample')}</th><th>{t('samples.colPatient')}</th><th>{t('samples.colClient')}</th><th>{t('samples.colSpec')}</th><th>{t('samples.colState')}</th><th>{t('samples.colReceived')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('code')}>{t('samples.colCode')}{sortArrow('code')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('tipo')}>{t('samples.colType')}{sortArrow('tipo')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('type')}>{t('samples.colSample')}{sortArrow('type')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('patient')}>{t('samples.colPatient')}{sortArrow('patient')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('client')}>{t('samples.colClient')}{sortArrow('client')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('spec')}>{t('samples.colSpec')}{sortArrow('spec')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('state')}>{t('samples.colState')}{sortArrow('state')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('received')}>{t('samples.colReceived')}{sortArrow('received')}</th>
               </tr></thead>
               <tbody>
-                {filtered.map(s=>{
+                {sortedRows.map(s=>{
                   const [sbg,sfg]=stateBg[s.state]; const [bg,fg]=specStyle(specialties, s.spec);
                   return (
                     <tr key={s.id} onClick={()=>setSelected(s)} className={selectedIds.has(s.id)?'row-picked':''}>
@@ -2251,7 +2306,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
                       <td style={{fontWeight:600,maxWidth:230}}>{s.type}{s.pots>1?<span style={{color:'var(--text-3)',fontWeight:500}}> · {s.pots} botes</span>:null}</td>
                       <td>{s.patient} <span style={{color:'var(--text-3)'}}>· {s.age?`${s.age}a `:''}{s.sex}</span></td>
                       <td style={{color:'var(--text-2)'}}>{clientById(clients, s.client)?.name || s.ref}</td>
-                      <td><span className="spec-pill" style={{background:bg,color:fg}}>{specShort(specialties, s.spec)}</span></td>
+                      <td><span className="spec-pill" style={{background:bg,color:fg}} title={s.spec}>{specShort(specialties, s.spec)}</span></td>
                       <td><span className="status-pill" style={{background:sbg,color:sfg}}><span className="sp-dot" style={{background:sfg}}></span>{stateLabelT(lang,s.state)}</span></td>
                       <td style={{color:'var(--text-3)',fontSize:12}}>{s.received}</td>
                     </tr>
@@ -3235,9 +3290,32 @@ function Quality({ samples, showToast }) {
 function Archive({ samples, updateState, updateSample, clients, specialties, materials, addMaterial, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, onOpenAdmin, onOpenReport }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d==='asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const sortArrow = (key) => sortKey===key ? (sortDir==='asc'?' ▲':' ▼') : '';
   const validated = samples.filter(s=>s.state==='validado');
   const q = search.trim().toLowerCase();
-  const list = q ? validated.filter(s=>`${s.id} ${s.caseCode||''} ${s.patient} ${s.type} ${s.spec} ${clientById(clients,s.client)?.name||''} ${s.notes||''}`.toLowerCase().includes(q)) : validated;
+  let list = q ? validated.filter(s=>`${s.id} ${s.caseCode||''} ${s.patient} ${s.type} ${s.spec} ${clientById(clients,s.client)?.name||''} ${s.notes||''}`.toLowerCase().includes(q)) : validated;
+  const ARCHIVE_SORT_GETTERS = {
+    ref: s => s.caseCode || s.id || '',
+    type: s => s.type || '',
+    patient: s => s.patient || '',
+    client: s => clientById(clients, s.client)?.name || s.ref || '',
+    spec: s => specShort(specialties, s.spec) || '',
+    tech: s => s.tech || '',
+    received: s => s.received || '',
+  };
+  if (sortKey) {
+    const getter = ARCHIVE_SORT_GETTERS[sortKey];
+    list = [...list].sort((a,b) => {
+      const cmp = String(getter(a)).localeCompare(String(getter(b)), 'es', {numeric:true, sensitivity:'base'});
+      return sortDir==='asc' ? cmp : -cmp;
+    });
+  }
   return (
     <div>
       <div className="page-head">
@@ -3257,7 +3335,16 @@ function Archive({ samples, updateState, updateSample, clients, specialties, mat
         ) : (
           <div className="tbl-wrap">
             <table className="tbl">
-              <thead><tr><th>Referencia</th><th>Tipo de muestra</th><th>Paciente</th><th>Cliente / mútua</th><th>Especialidad</th><th>Patólogo</th><th>Recepción</th><th></th></tr></thead>
+              <thead><tr>
+                <th className="th-sort" onClick={()=>toggleSort('ref')}>Referencia{sortArrow('ref')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('type')}>Tipo de muestra{sortArrow('type')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('patient')}>Paciente{sortArrow('patient')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('client')}>Cliente / mútua{sortArrow('client')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('spec')}>Especialidad{sortArrow('spec')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('tech')}>Patólogo{sortArrow('tech')}</th>
+                <th className="th-sort" onClick={()=>toggleSort('received')}>Recepción{sortArrow('received')}</th>
+                <th></th>
+              </tr></thead>
               <tbody>
                 {list.map(s=>{ const [bg,fg]=specStyle(specialties, s.spec); return (
                   <tr key={s.id} onClick={()=>setSelected(s)}>
@@ -3265,7 +3352,7 @@ function Archive({ samples, updateState, updateSample, clients, specialties, mat
                     <td style={{fontWeight:600,maxWidth:240}}>{s.type}</td>
                     <td>{s.patient}</td>
                     <td style={{color:'var(--text-2)'}}>{clientById(clients,s.client)?.name || s.ref}</td>
-                    <td><span className="spec-pill" style={{background:bg,color:fg}}>{specShort(specialties, s.spec)}</span></td>
+                    <td><span className="spec-pill" style={{background:bg,color:fg}} title={s.spec}>{specShort(specialties, s.spec)}</span></td>
                     <td style={{color:'var(--text-2)'}}>{s.tech}</td>
                     <td style={{color:'var(--text-3)',fontSize:12}}>{s.received}</td>
                     <td><button className="btn btn-ghost btn-sm" onClick={e=>{e.stopPropagation(); onOpenReport(s.id);}}>{I.doc} Informe</button></td>
@@ -3365,8 +3452,9 @@ function Analyze() {
 function Clients({ samples, clients, addClient, updateClient, deleteClient, onOpenSamples, adminDocs=[], onOpenAdmin }) {
   const { t } = useT();
   const [modal, setModal] = useState(null); // null | 'new' | client object a editar
+  const [search, setSearch] = useState('');
 
-  const rows = clients.map(c => {
+  let rows = clients.map(c => {
     const list = samples.filter(s => s.client === c.id);
     const byType = { B:0, C:0, P:0, G:0 };
     list.forEach(s => { byType[s.tipo] = (byType[s.tipo]||0) + 1; });
@@ -3374,6 +3462,8 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
     const docPending = docs.filter(d => ['borrador','enviada','pendiente'].includes(d.status)).length;
     return { ...c, count:list.length, byType, docCount:docs.length, docPending };
   }).sort((a,b)=>b.count-a.count);
+  const cq = search.trim().toLowerCase();
+  if (cq) rows = rows.filter(c => `${c.name} ${c.type||''} ${c.internalCode||''}`.toLowerCase().includes(cq));
 
   const totalMuestras = rows.reduce((a,b)=>a+b.count,0);
   const activos = rows.filter(r=>r.count>0).length;
@@ -3401,6 +3491,11 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
         </div>
       </div>
 
+      <div className="topbar-search" style={{maxWidth:340,margin:'0 0 14px'}}>
+        <span className="search-ico">{I.search}</span>
+        <input placeholder="Buscar cliente, tipo, nº interno…" value={search} onChange={e=>setSearch(e.target.value)} />
+      </div>
+
       <div className="mini-stat-row">
         {stats.map((s,i)=>(
           <div className="mini-stat" key={i}>
@@ -3411,7 +3506,10 @@ function Clients({ samples, clients, addClient, updateClient, deleteClient, onOp
       </div>
 
       {rows.length===0 && (
-        <div className="card"><div className="empty"><div className="empty-ico">{GL.building}</div><h3>{t('clients.emptyTitle')}</h3><p>{t('clients.emptyDesc')}</p></div></div>
+        <div className="card"><div className="empty"><div className="empty-ico">{GL.building}</div>
+          {cq ? (<><h3>Sin resultados</h3><p>Ningún cliente coincide con «{search}».</p><button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>Borrar búsqueda</button></>)
+              : (<><h3>{t('clients.emptyTitle')}</h3><p>{t('clients.emptyDesc')}</p></>)}
+        </div></div>
       )}
 
       <div className="client-grid">
@@ -3600,8 +3698,15 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus]);
 
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d==='asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const sortArrow = (key) => sortKey===key ? (sortDir==='asc'?' ▲':' ▼') : '';
   const q = search.trim().toLowerCase();
-  const filtered = adminDocs.filter(d => {
+  let filtered = adminDocs.filter(d => {
     if (d.type !== type) return false;
     if (clientFilter!=='all' && d.clientId !== clientFilter) return false;
     if (statusFilter!=='all' && d.status !== statusFilter) return false;
@@ -3609,6 +3714,22 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
     if (q && !(`${d.code} ${client} ${d.notes||''}`.toLowerCase().includes(q))) return false;
     return true;
   });
+  const ADMIN_SORT_GETTERS = {
+    code: d => d.code || '',
+    client: d => clientById(clients, d.clientId)?.name || '',
+    date: d => d.date || '',
+    lines: d => (d.lines||[]).length,
+    total: d => docTotal(d),
+    status: d => docStatusLabel(lang, d.status) || '',
+  };
+  if (sortKey) {
+    const getter = ADMIN_SORT_GETTERS[sortKey];
+    filtered = [...filtered].sort((a,b) => {
+      const av = getter(a), bv = getter(b);
+      const cmp = typeof av === 'number' ? av-bv : String(av).localeCompare(String(bv), 'es', {numeric:true, sensitivity:'base'});
+      return sortDir==='asc' ? cmp : -cmp;
+    });
+  }
   const selected = adminDocs.find(d=>d.id===selectedId) || null;
   const counts = Object.keys(DOC_TYPES).reduce((acc,dt)=>{ acc[dt]=adminDocs.filter(d=>d.type===dt).length; return acc; }, {});
 
@@ -3650,7 +3771,14 @@ function Admin({ adminDocs, addAdminDoc, updateAdminDoc, convertAdminDoc, client
       <div className="card">
         <div className="tbl-wrap">
           <table className="tbl">
-            <thead><tr><th>{t('admin.colCode')}</th><th>{t('admin.colClient')}</th><th>{t('admin.colDate')}</th><th>{t('admin.colLines')}</th><th>{t('admin.colTotal')}</th><th>{t('admin.colState')}</th></tr></thead>
+            <thead><tr>
+              <th className="th-sort" onClick={()=>toggleSort('code')}>{t('admin.colCode')}{sortArrow('code')}</th>
+              <th className="th-sort" onClick={()=>toggleSort('client')}>{t('admin.colClient')}{sortArrow('client')}</th>
+              <th className="th-sort" onClick={()=>toggleSort('date')}>{t('admin.colDate')}{sortArrow('date')}</th>
+              <th className="th-sort" onClick={()=>toggleSort('lines')}>{t('admin.colLines')}{sortArrow('lines')}</th>
+              <th className="th-sort" onClick={()=>toggleSort('total')}>{t('admin.colTotal')}{sortArrow('total')}</th>
+              <th className="th-sort" onClick={()=>toggleSort('status')}>{t('admin.colState')}{sortArrow('status')}</th>
+            </tr></thead>
             <tbody>
               {filtered.map(d=>{
                 const client = clientById(clients, d.clientId);
@@ -4384,7 +4512,7 @@ function Team({ specialties }) {
 }
 
 /* ════════════════ CONFIGURACIÓN ════════════════ */
-function Settings({ aiLive, specialties, addSpecialty, onShowGuide, onReset, showToast }) {
+function Settings({ aiLive, specialties, addSpecialty, techniques=[], addTechnique=()=>{}, removeTechnique=()=>{}, onShowGuide, onReset, showToast }) {
   const [newSpec, setNewSpec] = useState('');
   const addNewSpec = () => {
     const name = newSpec.trim();
@@ -4393,6 +4521,22 @@ function Settings({ aiLive, specialties, addSpecialty, onShowGuide, onReset, sho
     addSpecialty(name);
     setNewSpec('');
     showToast && showToast(`Especialidad «${name}» añadida`);
+  };
+
+  const [newTechnique, setNewTechnique] = useState('');
+  const addNewTechnique = () => {
+    const name = newTechnique.trim();
+    if (!name) return;
+    if (techniques.includes(name)) { showToast && showToast('Esa técnica ya existe'); return; }
+    addTechnique(name);
+    setNewTechnique('');
+    showToast && showToast(`Técnica «${name}» añadida`);
+  };
+  const deleteTechnique = (name) => {
+    if (window.confirm(`¿Eliminar «${name}» del catálogo de técnicas? Las muestras que ya la tienen asignada no cambian.`)) {
+      removeTechnique(name);
+      showToast && showToast(`Técnica «${name}» eliminada`);
+    }
   };
 
   return (
@@ -4438,6 +4582,26 @@ function Settings({ aiLive, specialties, addSpecialty, onShowGuide, onReset, sho
               <button className="btn btn-soft btn-sm" onClick={addNewSpec} disabled={!newSpec.trim()}>Añadir</button>
             </div>
             <div className="field-note">También puedes añadir una especialidad nueva directamente al registrar una muestra, en Recepción.</div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><h3>Técnicas</h3></div>
+          <div style={{padding:'14px 18px'}}>
+            <div className="chip-row" style={{marginBottom:8}}>
+              {techniques.map(tq=>(
+                <div className="obj-chip" key={tq}>
+                  <span className="oc-id">{tq}</span>
+                  <button type="button" onClick={()=>deleteTechnique(tq)} aria-label={`Eliminar ${tq}`} title="Eliminar del catálogo" style={{border:'none',background:'none',cursor:'pointer',color:'var(--text-3)',marginLeft:4,fontSize:13}}>×</button>
+                </div>
+              ))}
+              {techniques.length===0 && <span style={{fontSize:12.5,color:'var(--text-3)'}}>Sin técnicas todavía.</span>}
+            </div>
+            <div className="spec-add-row">
+              <input className="field-input" placeholder="Nueva técnica (p. ej. Tricrómico de Masson)" value={newTechnique} onChange={e=>setNewTechnique(e.target.value)} onKeyDown={e=>e.key==='Enter' && addNewTechnique()}/>
+              <button className="btn btn-soft btn-sm" onClick={addNewTechnique} disabled={!newTechnique.trim()}>Añadir</button>
+            </div>
+            <div className="field-note">También se añade sola cuando escribes una técnica nueva al procesar una muestra. Borrar aquí solo quita la sugerencia del catálogo, no toca las muestras ya guardadas.</div>
           </div>
         </div>
 
