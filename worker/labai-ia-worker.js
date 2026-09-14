@@ -3,7 +3,7 @@
 // su propia API key. El modelo anterior (llama-3.3-70b-versatile) fue
 // retirado por Groq el 2026-08-16; este usa el modelo de migración recomendado.
 const ALLOWED_ORIGINS = [
-  'https://lacostaagency1.github.io',
+  'https://jopiconlavidaia.github.io',
 ];
 
 const DEFAULT_MODEL = 'openai/gpt-oss-120b';
