@@ -764,7 +764,8 @@
       z-index: 490; animation: fadeIn 0.18s;
     }
 
-    .topbar { padding: 0 12px; gap: 10px; }
+    .topbar { padding: 8px 12px; gap: 8px; height: auto; min-height: 64px; flex-wrap: wrap; }
+    .topbar-right { max-width:100%; flex-wrap:wrap; gap:6px; }
     .topbar-search { display: none; }
     .user-meta { display: none; }
     .breadcrumb .crumb-main { font-size: 14px; }
@@ -810,6 +811,7 @@
   .cal-day:not(:disabled):hover { background: var(--surface-2, #eef1f4); }
 
   @media print {
+    .app, .main, .content, .content-narrow, .report-cols, .report-doc { height:auto !important; overflow:visible !important; }
     body * { visibility: hidden; }
     .print-area, .print-area * { visibility: visible; }
     .print-area { position: absolute; top: 0; left: 0; width: 100%; padding: 12px; }
@@ -981,9 +983,10 @@ const DOC_TYPES = {
   proforma: { label:'Proforma', plural:'Proformas', prefix:'PRO', statuses:{ borrador:'Borrador', enviada:'Enviada', aceptada:'Aceptada' }, next:{} },
 };
 let ADMIN_SEQ = { oferta:1, pedido:1, albaran:1, factura:1, proforma:1 };
-const nextDocCode = (type) => `${DOC_TYPES[type].prefix}-25-${String(ADMIN_SEQ[type]++).padStart(3,'0')}`;
+const nextDocCode = (type) => `${DOC_TYPES[type].prefix}-${String(new Date().getFullYear()).slice(-2)}-${String(ADMIN_SEQ[type]++).padStart(3,'0')}`;
 const docTotal = (doc) => (doc.lines||[]).reduce((sum,l)=>sum+(Number(l.qty)||0)*(Number(l.unitPrice)||0), 0);
-const todayISO = () => new Date().toISOString().slice(0,10);
+const todayISO = () => ymd(new Date());
+const validNumber = (value, min, max=Infinity, integer=false) => String(value).trim() !== '' && Number.isFinite(Number(value)) && Number(value)>=min && Number(value)<=max && (!integer || Number.isInteger(Number(value)));
 // Precio de una muestra para un cliente concreto: tarifa por tipo B/C/P menos su descuento.
 const sampleLinePrice = (client, sample) => {
   const base = client?.rate?.[sample.tipo] ?? 0;
@@ -1008,7 +1011,9 @@ function loadStored(key, fallback) {
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : fallback;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) !== Array.isArray(fallback)) return fallback;
+    if (Array.isArray(fallback) && parsed.some(item => item === null || typeof item !== typeof fallback[0] && fallback.length>0)) return fallback;
+    return parsed;
   } catch (e) { return fallback; }
 }
 function saveStored(key, value) {
@@ -1141,8 +1146,9 @@ function heLabelsForSample(s, count) {
 }
 const mkSample = (o) => {
   const pots = o.pots || 1;
-  const caseCode = `25${o.tipo||'B'}${o.caseNo}`;
-  return { id:`BP-25-${String(o.n).padStart(5,'0')}`, pots, caseCode, ...o };
+  const year = o.year || '25'; // Los casos históricos de demostración mantienen su año.
+  const caseCode = `${year}${o.tipo||'B'}${o.caseNo}`;
+  return { id:`BP-${year}-${String(o.n).padStart(5,'0')}`, pots, caseCode, ...o };
 };
 
 const INITIAL_SAMPLES = [
@@ -1258,14 +1264,6 @@ function simulateChatReply(q, samples) {
 }
 
 function simulateReport(sample, spec, template, macro, micro) {
-  const sn = snomedFor(spec);
-  const grading = {
-    'Dermatopatología':'Índice de Breslow y nivel de Clark según corresponda. Valorar márgenes de resección y biopsia de ganglio centinela si pT1b o superior.',
-    'Patología mamaria':'Gradación histológica de Nottingham. Se recomienda completar con estudio inmunohistoquímico (RE, RP, HER2, Ki-67).',
-    'Ginecológica':'Clasificación según sistema Bethesda. Correlación con genotipado de VPH de alto riesgo.',
-    'Digestiva':'Grado de displasia (bajo/alto). Valorar márgenes de polipectomía y seguimiento endoscópico según protocolo.',
-  };
-  const gradingText = grading[spec] || 'Correlacionar con la clínica y ampliar estudio si procede.';
   return `DATOS DE LA MUESTRA
 Referencia: ${sample.id}
 Paciente: ${sample.patient}, ${sample.age} años, ${sample.sex==='M'?'mujer':'hombre'}
@@ -1280,17 +1278,17 @@ DESCRIPCIÓN MICROSCÓPICA
 ${micro}
 
 DIAGNÓSTICO
-${template}. Los hallazgos morfológicos descritos son compatibles con el diagnóstico orientativo. ${gradingText}
+Orientación aportada: ${template || '[PENDIENTE]'}
+[PENDIENTE: diagnóstico y validación por el patólogo. Esta simulación no interpreta los hallazgos.]
 
 CODIFICACIÓN SNOMED CT
-Morfología: ${sn.code} — ${sn.t}
-Topografía: ${sn.topo}
+[PENDIENTE: codificación por el patólogo]
 
 COMENTARIO / RECOMENDACIONES
 Informe redactado a partir de los hallazgos consignados por el patólogo. Se recomienda correlación clínica. [PENDIENTE: validación y firma del facultativo responsable antes de la emisión definitiva].
 
 — — —
-(Borrador generado en modo demostración. Con una clave de Groq conectada, la redacción la realiza el modelo de IA Llama 3.3 70B adaptándose a cada caso.)`;
+(Borrador de demostración, sin interpretación ni validación clínica.)`;
 }
 
 // llama-3.3-70b-versatile fue retirado por Groq el 2026-08-16; openai/gpt-oss-120b
@@ -1313,11 +1311,14 @@ async function aiComplete(apiKey, { messages, temperature=0.4, max_tokens=800 })
   if (ownKey) headers['Authorization'] = `Bearer ${apiKey}`;
   const res = await fetch(url, {
     method:'POST', headers,
-    body: JSON.stringify({ model: GROQ_MODEL, temperature, max_tokens, messages })
+    body: JSON.stringify({ model: GROQ_MODEL, temperature, max_tokens, messages }),
+    signal: AbortSignal.timeout(30000)
   });
   if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e?.error?.message || `HTTP ${res.status}`); }
   const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) throw new Error('El motor de IA devolvió una respuesta vacía');
+  return content;
 }
 const SYS_PROMPT = `Eres LabAI, el asistente de inteligencia artificial integrado en el sistema de gestión del laboratorio de anatomía patológica BCN Patòlegs (Barcelona). Especialidades del laboratorio: dermatopatología, patología mamaria, patología ginecológica y patología digestiva.
 
@@ -1331,7 +1332,7 @@ Ayudas a patólogos y técnicos respondiendo de forma TÉCNICA y PRECISA sobre:
 Reglas:
 - Responde en español, con terminología médica rigurosa.
 - Sé conciso pero completo; usa listas cuando aporte claridad.
-- Cuando uses información de un protocolo, cítalo entre corchetes así: [Protocolo H&E v3.2].
+- No tienes el contenido de los protocolos ni de los archivos adjuntos. No afirmes haberlos leído ni inventes citas, páginas o referencias internas.
 - Si una pregunta excede el contexto del laboratorio, indícalo y reconduce.
 - Nunca inventes códigos SNOMED ni datos de pacientes que no se te hayan dado.`;
 
@@ -1557,7 +1558,7 @@ function App() {
 
   // "Realmente activa": comprobado en vivo contra el servidor compartido, no solo
   // "hay una URL configurada" — si ya se comprobó y falló, no mentimos.
-  const aiLive = aiStatus === 'error' ? false : aiAvailable(apiKey);
+  const aiLive = aiStatus === 'ok' && aiAvailable(apiKey);
   const onAiResult = useCallback((ok) => setAiStatus(ok ? 'ok' : 'error'), []);
 
   // Comprobación de conectividad real al cargar, para que el indicador "IA activa"
@@ -1566,7 +1567,7 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
-        await aiComplete(apiKey, { messages: [{ role: 'user', content: 'ping' }], max_tokens: 3, temperature: 0 });
+        await aiComplete(apiKey, { messages: [{ role: 'user', content: 'Responde solo OK.' }], max_tokens: 200, temperature: 0 });
         if (!cancelled) setAiStatus('ok');
       } catch (e) {
         if (!cancelled) setAiStatus('error');
@@ -1679,7 +1680,7 @@ function App() {
     setClients(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
   };
   const deleteClient = (id) => {
-    if (samples.some(s => s.client === id)) { showToast('No se puede eliminar: tiene muestras vinculadas.'); return; }
+    if (samples.some(s => s.client === id) || adminDocs.some(d => d.clientId === id)) { showToast('No se puede eliminar: tiene muestras o documentos vinculados.'); return; }
     setClients(prev => prev.filter(c => c.id !== id));
   };
 
@@ -1716,6 +1717,7 @@ function App() {
                 samples={samples} search={search} setSearch={setSearch} onSubmitSearch={submitSearch} onNavigate={setView}
                 onToggleNav={() => setMobileNavOpen(v => !v)} />
         <div className="content">
+          <p style={{fontSize:12,color:'var(--text-2)',margin:'0 0 12px'}}>Demo · Usa solo datos ficticios. Las muestras y documentos se reinician al recargar; la configuración se guarda en este navegador.</p>
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
             {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
@@ -1851,7 +1853,7 @@ function Topbar({ title, aiLive, onGuide, samples, search, setSearch, onSubmitSe
           {aiLive ? t('topbar.aiOn') : t('topbar.aiOff')}
         </span>
         <div style={{position:'relative'}}>
-          <button className="icon-btn" onClick={()=>{setNotifOpen(o=>!o); setUserOpen(false);}}>{urgent.length>0 && <span className="dot-alert"></span>}{I.bell}</button>
+          <button className="icon-btn" aria-label={t('topbar.notifications')} onClick={()=>{setNotifOpen(o=>!o); setUserOpen(false);}}>{urgent.length>0 && <span className="dot-alert"></span>}{I.bell}</button>
           {notifOpen && (
             <Portal><div className="pop-backdrop" onClick={()=>setNotifOpen(false)}/></Portal>
           )}
@@ -2200,7 +2202,6 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
   const s = sample;
   const [bg,fg] = specStyle(specialties, s.spec);
   const trace = TRACE(s);
-  const sn = snomedFor(s.spec);
   const client = clientById(clients, s.client);
   const letters = potLetters(s.pots || 1);
   const order = ['recibida','tallado','procesando','diagnostico','validado'];
@@ -2422,8 +2423,7 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
 
           <div className="section-title">Codificación SNOMED CT</div>
           <div className="snomed-box">
-            <div className="snomed-code">Morfología: {sn.code} · {sn.t}</div>
-            <div className="snomed-desc">Topografía: {sn.topo} {s.state!=='validado' && <span style={{color:'var(--amber)'}}> · pendiente de confirmación diagnóstica</span>}</div>
+            <div className="snomed-desc">Pendiente de codificación por el patólogo. La especialidad no determina el diagnóstico ni su código.</div>
           </div>
 
           <div className="section-title">Trazabilidad</div>
@@ -2465,15 +2465,15 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
   const set = (k,v) => setF(p=>({...p,[k]:v}));
   // Único requisito real: saber de quién es la muestra. Todo lo demás se puede
   // completar luego — "meto 50 muestras de golpe" no puede depender de tenerlo
-  // todo a mano en ese momento.
-  const valid = f.patient.trim().length > 0;
+  // todo a mano en ese momento. Lo que sí se rellena se valida (edad/botes).
+  const valid = f.patient.trim().length > 0 && (!f.age.trim() || validNumber(f.age,0,120,true)) && validNumber(f.pots,1,12,true);
 
   const matchedClient = clients.find(c => c.name.trim().toLowerCase() === f.clientName.trim().toLowerCase());
   const isNewClient = f.clientName.trim() && !matchedClient;
   const isNewSpec = f.spec.trim() && !specialties[f.spec.trim()];
-  const previewCode = `25${f.tipo}${CASE_SEQ}`;
+  const previewCode = `${String(new Date().getFullYear()).slice(-2)}${f.tipo}${CASE_SEQ}`;
   const letters = potLetters(f.pots);
-  const setPots = (n) => set('pots', Math.max(1, Math.min(12, Number(n)||1)));
+  const setPots = (n) => set('pots', Math.max(1, Math.min(12, Math.floor(Number(n))||1)));
 
   const submit = () => {
     if (!valid) return;
@@ -2494,7 +2494,7 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
     if (f.ref.trim()) addDoctor(f.ref.trim());
 
     const ns = mkSample({
-      n: ++SID, caseNo, tipo:f.tipo, client:clientId, pots:Number(f.pots)||1,
+      n: ++SID, caseNo, year:String(now.getFullYear()).slice(-2), tipo:f.tipo, client:clientId, pots:Number(f.pots)||1,
       type:f.type.trim() || 'Sin descripción todavía', patient:f.patient.trim(),
       age: f.age ? Number(f.age) : null, sex:f.sex,
       historyNumber:f.historyNumber.trim(), birthDate:f.birthDate||null,
@@ -2503,7 +2503,7 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
       // Recepción es un lote aparte: en cuanto se registra, la muestra ya está
       // lista para el siguiente paso (Inclusión) en otro puesto — nadie tiene
       // que "avanzarla" a mano desde Recepción.
-      state:'tallado', urgent:f.urgent, received:`28/06 ${hh}:${mm}`, blocks:0, slides:0
+      state:'tallado', urgent:f.urgent, received:`${pad2(now.getDate())}/${pad2(now.getMonth()+1)} ${hh}:${mm}`, receivedAt:now.toISOString(), blocks:0, slides:0
     });
     onAdd(ns);
   };
@@ -2730,7 +2730,7 @@ function Chat({ apiKey, aiLive, onAiResult, samples }) {
   const [uploaded, setUploaded] = useState([]);
   const [messages, setMessages] = useState([{
     role:'assistant',
-    content:`Hola, soy **LabAI**, el asistente clínico del laboratorio. Tengo cargados los protocolos internos de BCN Patòlegs y el estado actual de las **${samples.length} muestras** activas.\n\nPuedo ayudarte con criterios diagnósticos, codificación SNOMED CT, protocolos técnicos y trazabilidad. Prueba una de las preguntas sugeridas de abajo 👇 o escribe la tuya. ¿Qué necesitas consultar?`,
+    content:`Hola, soy **LabAI**, el asistente clínico del laboratorio. Esta demo muestra un catálogo de protocolos, cuyo contenido no está conectado al asistente. Puedo consultar el estado de las **${samples.length} muestras** activas.\n\nPuedo ayudarte con criterios diagnósticos, codificación SNOMED CT, protocolos técnicos y trazabilidad. Prueba una de las preguntas sugeridas de abajo 👇 o escribe la tuya. ¿Qué necesitas consultar?`,
     sources:[]
   }]);
   const [input, setInput] = useState('');
@@ -2760,8 +2760,8 @@ function Chat({ apiKey, aiLive, onAiResult, samples }) {
     if (!aiLive) {
       await sleep(700 + Math.random()*700);
       const reply = simulateChatReply(q, samples);
-      const sources = /protocolo|tinci|h&e|iso|bethesda|breslow|snomed/i.test(reply) ? [{ name: activeDoc.name, page: Math.floor(Math.random()*activeDoc.pages)+1 }] : [];
-      setMessages(m=>[...m, { role:'assistant', content:reply, sources }]);
+      const sources = [];
+      setMessages(m=>[...m, { role:'assistant', content:'[SIMULACIÓN: respuesta de demostración]\n\n'+reply, sources }]);
       setLoading(false);
       return;
     }
@@ -2779,17 +2779,13 @@ function Chat({ apiKey, aiLive, onAiResult, samples }) {
         ]
       });
       const sources = [];
-      const docMention = reply.match(/\[Protocolo[^\]]*\]|\[ISO[^\]]*\]/);
-      if (docMention || /protocolo|tinción|H&E|ISO|bethesda|breslow/i.test(reply)) {
-        sources.push({ name: activeDoc.name, page: Math.floor(Math.random()*activeDoc.pages)+1 });
-      }
       setMessages(m=>[...m, { role:'assistant', content:reply || 'No se obtuvo respuesta.', sources }]);
       onAiResult && onAiResult(true);
     } catch(e) {
       // Si la IA real falla, caemos al modo demostración para que nunca parezca roto,
       // pero avisamos al resto de la app de que el motor de IA no está respondiendo.
       const reply = simulateChatReply(q, samples);
-      setMessages(m=>[...m, { role:'assistant', content:reply, sources:[] }]);
+      setMessages(m=>[...m, { role:'assistant', content:'[SIMULACIÓN: el motor de IA no está disponible]\n\n'+reply, sources:[] }]);
       onAiResult && onAiResult(false);
     }
     setLoading(false);
@@ -2798,7 +2794,7 @@ function Chat({ apiKey, aiLive, onAiResult, samples }) {
   const onFile = (e) => {
     const f = e.target.files[0]; if (!f) return;
     setUploaded(u=>[...u, f]);
-    setMessages(m=>[...m, { role:'assistant', content:`He indexado **${f.name}** (${(f.size/1024).toFixed(0)} KB). Ya puedo responder preguntas sobre su contenido junto con los protocolos del laboratorio.`, sources:[{name:f.name,page:1}] }]);
+    setMessages(m=>[...m, { role:'assistant', content:`Has seleccionado **${f.name}** (${(f.size/1024).toFixed(0)} KB). Esta demo no extrae ni indexa su contenido; el asistente no puede leerlo.`, sources:[] }]);
     e.target.value='';
   };
 
@@ -2806,7 +2802,7 @@ function Chat({ apiKey, aiLive, onAiResult, samples }) {
     <div className="card" style={{height:'100%',padding:0,display:'flex',overflow:'hidden'}}>
       <div className="chat-wrap">
         <div className="chat-docs">
-          <div className="chat-docs-head"><h3>Base de conocimiento</h3><p>Protocolos y documentos indexados</p></div>
+          <div className="chat-docs-head"><h3>Base de conocimiento</h3><p>Catálogo de demostración · contenido no conectado</p></div>
           <div className="doc-list">
             {DOCS.map(d=>(
               <button key={d.id} className={`doc-item${activeDoc.id===d.id?' active':''}`} onClick={()=>setActiveDoc(d)}>
@@ -2894,7 +2890,7 @@ function Reports({ apiKey, aiLive, onAiResult, samples, specialties, showToast, 
   }, [initialSampleId]);
   const sample = samples.find(s=>s.id===sampleId) || samples[0];
   const [spec, setSpec] = useState(sample?.spec || Object.keys(specialties)[0]);
-  const [template, setTemplate] = useState(templatesFor(sample?.spec)[0]);
+  const [template, setTemplate] = useState('');
   const [macro, setMacro] = useState('');
   const [micro, setMicro] = useState('');
   const [report, setReport] = useState('');
@@ -2905,34 +2901,27 @@ function Reports({ apiKey, aiLive, onAiResult, samples, specialties, showToast, 
       setSpec(sample.spec);
       // Si el caso ya trae descripción macroscópica (paso de Inclusión) o
       // diagnóstico (paso de Diagnóstico) reales, se arranca con eso en vez
-      // de un texto de relleno — solo se usa el preset genérico si falta.
+      // de un texto de relleno. Los hallazgos ausentes permanecen vacíos.
       const knownTemplate = templatesFor(sample.spec).find(t =>
         (sample.diagnosisText||'').toLowerCase().includes(t.toLowerCase())
       );
-      setTemplate(knownTemplate || templatesFor(sample.spec)[0]);
-      const presets = {
-        'Dermatopatología': ['Fragmento cutáneo de 0,8 x 0,6 cm con lesión pigmentada central de bordes irregulares.', 'Proliferación melanocítica atípica de disposición lentiginosa y nidos irregulares en unión dermoepidérmica. Pleomorfismo nuclear moderado. Se observan mitosis dérmicas. Índice de Breslow 1,2 mm.'],
-        'Patología mamaria': ['Cilindros de tejido mamario (BAG), conjunto 1,5 cm.', 'Proliferación epitelial de patrón infiltrante con formación de túbulos (<10%). Pleomorfismo nuclear grado 2. Estroma desmoplásico. Receptores hormonales pendientes de inmunohistoquímica.'],
-        'Ginecológica': ['Extensión cérvico-vaginal. Material celular representativo, fijación adecuada.', 'Células escamosas con relación núcleo/citoplasma aumentada, hipercromasia y halos perinucleares (coilocitos). Cambios sugestivos de lesión intraepitelial de bajo grado (LSIL).'],
-        'Digestiva': ['Tres fragmentos de mucosa colónica, el mayor de 0,4 cm.', 'Mucosa colónica con arquitectura glandular tubular y displasia epitelial de bajo grado. No se observa invasión de la muscularis mucosae. Sin signos de malignidad.'],
-      };
-      const preset = presets[sample.spec] || GENERIC_PRESET;
-      setMacro(sample.desc?.trim() || preset[0]);
-      setMicro(sample.diagnosisText?.trim() || preset[1]);
+      setTemplate(knownTemplate || sample.diagnosisText?.trim() || '');
+      setMacro(sample.desc?.trim() || '');
+      setMicro(sample.diagnosisText?.trim() || '');
       setReport('');
     }
   }, [sampleId]);
 
   const generate = async () => {
+    if (gen || !sample || !macro.trim() || !micro.trim()) return;
     setGen(true); setReport('');
     // Sin IA real disponible (o ya sabemos que no responde) → informe simulado
     if (!aiLive) {
       await sleep(1100 + Math.random()*600);
-      setReport(simulateReport(sample, spec, template, macro, micro));
+      setReport('SIMULACIÓN — BORRADOR DE DEMOSTRACIÓN, NO VALIDADO\n\n'+simulateReport(sample, spec, template, macro, micro));
       setGen(false);
       return;
     }
-    const sn = snomedFor(spec);
     const prompt = `Redacta un INFORME ANATOMOPATOLÓGICO profesional y completo en español, listo para validar, con esta estructura exacta usando los encabezados en MAYÚSCULAS:
 
 DATOS DE LA MUESTRA
@@ -2951,7 +2940,7 @@ Datos:
 - Orientación diagnóstica (plantilla): ${template}
 - Hallazgos macroscópicos del patólogo: ${macro}
 - Hallazgos microscópicos del patólogo: ${micro}
-- Referencia SNOMED orientativa: morfología ${sn.code} (${sn.t}), topografía ${sn.topo}
+- Codificación SNOMED: no se ha proporcionado un código verificado. Escribe [PENDIENTE: codificación por el patólogo]; no lo deduzcas de la especialidad.
 
 Usa terminología anatomopatológica rigurosa. En DIAGNÓSTICO sé conciso y categórico. Incluye gradación o estadificación si procede (Breslow/Clark en melanoma, grado de Nottingham en mama, sistema Bethesda en citología, grado de displasia en digestivo). No inventes datos no proporcionados; si falta algún dato relevante para completar, indícalo como [PENDIENTE: ...].`;
 
@@ -2965,15 +2954,16 @@ Usa terminología anatomopatológica rigurosa. En DIAGNÓSTICO sé conciso y cat
     } catch(e) {
       // Si la IA real falla, usamos el borrador simulado para que nunca quede en blanco,
       // pero avisamos al resto de la app de que el motor de IA no está respondiendo.
-      setReport(simulateReport(sample, spec, template, macro, micro));
+      setReport('SIMULACIÓN — BORRADOR DE DEMOSTRACIÓN, NO VALIDADO\n\n'+simulateReport(sample, spec, template, macro, micro));
       onAiResult && onAiResult(false);
     }
     setGen(false);
   };
 
   const exportTxt = () => {
-    const blob = new Blob([`BCN PATÒLEGS — INFORME ANATOMOPATOLÓGICO\nReferencia: ${sample.caseCode}\n\n${report}`], {type:'text/plain'});
+    const blob = new Blob([`BCN PATÒLEGS — BORRADOR NO VALIDADO\nReferencia: ${sample.caseCode}\n\n${report}`], {type:'text/plain'});
     const u = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=`${sample.caseCode}_informe.txt`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(u),1000);
     showToast('Informe exportado');
   };
 
@@ -2981,7 +2971,7 @@ Usa terminología anatomopatológica rigurosa. En DIAGNÓSTICO sé conciso y cat
     <div className="report-cols">
       <div className="card" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div className="card-head"><h3>{I.report} Datos del informe</h3></div>
-        <div className="report-form-body">
+        <fieldset className="report-form-body" disabled={gen} style={{border:0,margin:0,minWidth:0}}>
           <div className="field">
             <label className="field-label">Muestra</label>
             <select className="field-input" value={sampleId} onChange={e=>setSampleId(e.target.value)}>
@@ -2991,7 +2981,7 @@ Usa terminología anatomopatológica rigurosa. En DIAGNÓSTICO sé conciso y cat
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             <div className="field">
               <label className="field-label">Especialidad</label>
-              <select className="field-input" value={spec} onChange={e=>{setSpec(e.target.value); setTemplate(templatesFor(e.target.value)[0]);}}>
+              <select className="field-input" value={spec} onChange={e=>{setSpec(e.target.value); setTemplate('');}}>
                 {Object.keys(specialties).map(sp=><option key={sp}>{sp}</option>)}
               </select>
             </div>
@@ -3017,7 +3007,7 @@ Usa terminología anatomopatológica rigurosa. En DIAGNÓSTICO sé conciso y cat
               ? 'Completa la descripción macroscópica y microscópica para poder generar el informe.'
               : 'La IA redacta el borrador. El patólogo revisa, ajusta y valida antes de firmar.'}
           </p>
-        </div>
+        </fieldset>
       </div>
 
       <div className="card report-doc">
@@ -3028,7 +3018,8 @@ Usa terminología anatomopatológica rigurosa. En DIAGNÓSTICO sé conciso y cat
             <button className="btn btn-soft btn-sm" onClick={exportTxt}>{I.download} Exportar</button></>}
           </div>
         </div>
-        <div className="report-paper">
+        <div className="report-paper print-area">
+          <p style={{fontWeight:700}}>BORRADOR NO VALIDADO · Requiere revisión del patólogo</p>
           <div className="rp-letterhead">
             <div className="rp-lab">
               <div className="rp-lab-mark"><img src={LOGO_SRC} alt="BCN Patòlegs"/></div>
@@ -3039,7 +3030,7 @@ Usa terminología anatomopatológica rigurosa. En DIAGNÓSTICO sé conciso y cat
             </div>
             <div className="rp-ref">
               <div><strong>Ref:</strong> {sample.caseCode}</div>
-              <div><strong>Fecha:</strong> 28/06/2025</div>
+              <div><strong>Fecha:</strong> {new Date().toLocaleDateString('es-ES')}</div>
               <div><strong>Patólogo:</strong> {sample.tech}</div>
             </div>
           </div>
@@ -3079,7 +3070,7 @@ function ReportRender({ text }) {
 /* ════════════════ QUALITY ════════════════ */
 function Quality({ samples, showToast }) {
   const exportAudit = () => {
-    const head = 'BCN PATÒLEGS — REGISTRO DE AUDITORÍA (ISO 15189:2022)\nExportado: 28/06/2025\n' + '='.repeat(60) + '\n\n';
+    const head = `BCN PATÒLEGS — EJEMPLO DE AUDITORÍA, DATOS SIMULADOS\nExportado: ${todayISO()}\n` + '='.repeat(60) + '\n\n';
     const body = AUDIT.map(a=>`[${a.time}] ${a.tag.toUpperCase()}\n${a.desc}\nUsuario: ${a.who}\n`).join('\n');
     const blob = new Blob([head+body], {type:'text/plain'});
     const u = URL.createObjectURL(blob); const el=document.createElement('a'); el.href=u; el.download='BCN_Patolegs_auditoria.txt'; el.click();
@@ -3103,7 +3094,7 @@ function Quality({ samples, showToast }) {
   return (
     <div>
       <div className="page-head">
-        <div><h1>Calidad y trazabilidad</h1><p>Registro de auditoría · ISO 15189:2022 · cumplimiento RGPD</p></div>
+        <div><h1>Calidad y trazabilidad</h1><p>Datos simulados de demostración. No acredita cumplimiento normativo ni registra las acciones de esta sesión.</p></div>
         <div className="page-head-actions"><button className="btn btn-ghost" onClick={exportAudit}>{I.download} Exportar auditoría</button></div>
       </div>
 
@@ -3119,7 +3110,7 @@ function Quality({ samples, showToast }) {
 
       <div className="quality-grid">
         <div className="card">
-          <div className="card-head"><h3>Registro de actividad — últimas 24h</h3><div className="card-actions"><span style={{fontSize:11.5,color:'var(--text-3)'}}>Trazabilidad inmutable</span></div></div>
+          <div className="card-head"><h3>Ejemplo de registro de actividad</h3><div className="card-actions"><span style={{fontSize:11.5,color:'var(--text-3)'}}>Datos simulados</span></div></div>
           <div>
             {AUDIT.map((a,i)=>(
               <div className="audit-item" key={i}>
@@ -3134,7 +3125,7 @@ function Quality({ samples, showToast }) {
 
         <div style={{display:'flex',flexDirection:'column',gap:18}}>
           <div className="card">
-            <div className="card-head"><h3>Certificación ISO 15189</h3><div className="card-actions"><span className="audit-tag" style={{background:'var(--green-bg)',color:'var(--green)'}}>Vigente</span></div></div>
+            <div className="card-head"><h3>Indicadores ilustrativos ISO 15189</h3><div className="card-actions"><span className="audit-tag">Sin verificar</span></div></div>
             <div style={{padding:'16px 18px'}}>
               {iso.map(([name,pct,c],i)=>(
                 <div className="iso-row" key={i}>
@@ -3147,10 +3138,10 @@ function Quality({ samples, showToast }) {
           <div className="card">
             <div className="card-head"><h3>Protección de datos (RGPD)</h3></div>
             <div style={{padding:'16px 18px',display:'flex',flexDirection:'column',gap:11}}>
-              {[['Cifrado de datos en reposo','AES-256','green'],['Datos alojados','On-premise (Barcelona)','green'],['Anonimización para IA','Activa','green'],['Registro de accesos','Completo','green']].map(([k,v,c],i)=>(
+              {[['Cifrado de datos en reposo','No implementado'],['Datos alojados','Navegador local'],['Anonimización para IA','No implementada'],['Registro de accesos','No implementado']].map(([k,v],i)=>(
                 <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:13}}>
                   <span style={{color:'var(--text-2)'}}>{k}</span>
-                  <span className="audit-tag" style={{background:'var(--green-bg)',color:'var(--green)'}}>✓ {v}</span>
+                  <span className="audit-tag">{v}</span>
                 </div>
               ))}
             </div>
@@ -3257,7 +3248,7 @@ function Analyze() {
           <div className="card-head"><h3>{I.analyze} Documento a analizar</h3></div>
           <div style={{padding:'10px'}}>
             {ANZ_DOCS.map(d=>(
-              <button key={d.id} className={`doc-item${docId===d.id?' active':''}`} onClick={()=>{setDocId(d.id); setResult(null);}}>
+              <button key={d.id} className={`doc-item${docId===d.id?' active':''}`} disabled={busy} onClick={()=>{setDocId(d.id); setResult(null);}}>
                 <div className="doc-item-top"><span>{I.doc}</span><span className="doc-item-name">{d.id}</span></div>
                 <div className="doc-item-meta">{d.type.slice(0,38)}</div>
               </button>
@@ -3433,7 +3424,7 @@ function ClientModal({ client, onClose, onSave }) {
     internalCode: client?.internalCode || '',
   }));
   const set = (k,v) => setF(p=>({...p,[k]:v}));
-  const valid = f.name.trim().length > 0;
+  const valid = f.name.trim().length > 0 && validNumber(f.discount,0,100) && [f.rateB,f.rateC,f.rateP].every(v=>validNumber(v,0,100000000));
 
   const submit = () => {
     if (!valid) return;
@@ -3642,7 +3633,7 @@ function DocModal({ type, clients, samples, presetClientId, presetSampleId, onCl
   const setLine = (i, patch) => setLines(prev => prev.map((l,idx)=>idx===i?{...l,...patch}:l));
   const removeLine = (i) => setLines(prev => prev.filter((_,idx)=>idx!==i));
 
-  const valid = clientId && lines.length>0 && lines.every(l=>l.concept.trim());
+  const valid = clients.some(c=>c.id===clientId) && /^\d{4}-\d{2}-\d{2}$/.test(date) && lines.length>0 && lines.every(l=>l.concept.trim() && validNumber(l.qty,1,100000,true) && validNumber(l.unitPrice,0,100000000) && (!l.sampleId || samples.some(s=>s.id===l.sampleId && s.client===clientId)));
 
   const submit = () => {
     if (!valid) return;
@@ -3662,7 +3653,7 @@ function DocModal({ type, clients, samples, presetClientId, presetSampleId, onCl
           <div className="new-sample-grid">
             <div className="field">
               <label className="field-label">Cliente / mútua *</label>
-              <select className="field-input" value={clientId} onChange={e=>setClientId(e.target.value)}>
+              <select className="field-input" value={clientId} onChange={e=>{setClientId(e.target.value); setLines([]);}}>
                 {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -4331,7 +4322,7 @@ function Settings({ aiLive, specialties, addSpecialty, onShowGuide, onReset, sho
               <div className="set-title">Motor de IA</div>
               <div className="set-desc">
                 {aiLive
-                  ? 'IA real activa para todo el equipo vía el servidor del laboratorio. No hace falta configurar nada.'
+                  ? 'El servicio externo de IA responde. Esta demo usa un proxy de Cloudflare y el proveedor Groq.'
                   : 'El servidor de IA no responde ahora mismo. Mostrando respuestas de demostración mientras tanto.'}
               </div>
             </div>
@@ -4343,7 +4334,7 @@ function Settings({ aiLive, specialties, addSpecialty, onShowGuide, onReset, sho
           <div className="card-head"><h3>Datos del laboratorio</h3></div>
           <div className="set-row"><div className="set-info"><div className="set-title">Centro</div><div className="set-desc">BCN Patòlegs · Laboratori d'Anatomia Patològica</div></div></div>
           <div className="set-row"><div className="set-info"><div className="set-title">Dirección</div><div className="set-desc">Pg. de Josep Llovera, 9 · 08021 Barcelona</div></div></div>
-          <div className="set-row"><div className="set-info"><div className="set-title">Alojamiento de datos</div><div className="set-desc">On-premise · servidor del laboratorio (Barcelona)</div></div><span className="audit-tag" style={{background:'var(--green-bg)',color:'var(--green)'}}>✓ RGPD</span></div>
+          <div className="set-row"><div className="set-info"><div className="set-title">Alojamiento de datos</div><div className="set-desc">Datos en memoria y configuración en este navegador. Sin servidor de datos conectado.</div></div><span className="audit-tag">Demo</span></div>
         </div>
 
         <div className="card">
