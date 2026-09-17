@@ -4819,7 +4819,7 @@ const OB_STEPS = [
     view:'dashboard',
     lead:<>Esto es <strong>LabAI</strong>, el sistema de gestión de laboratorio de <strong>BCN Patòlegs</strong>. Une la trazabilidad completa de muestras con un asistente de inteligencia artificial que entiende de anatomía patológica.</>,
     steps:[
-      <>A la <strong>izquierda</strong> tienes el menú: Panel, Muestras, Informes, Clientes y Calidad.</>,
+      <>A la <strong>izquierda</strong> tienes el menú: Panel, Muestras, Informes y Archivo — más opciones de gestión según tu rol.</>,
       <>Arriba a la derecha está tu perfil para cerrar sesión. La <strong>IA está simulada</strong> en la demo pública; no envía el contenido de los formularios a proveedores externos.</>,
       <>Puedes probarlo <strong>tal cual</strong>: nada de lo que hagas aquí es real.</>,
     ],
@@ -4858,7 +4858,7 @@ const OB_STEPS = [
       <>Puedes <strong>subir un documento</strong> (PDF, imagen…) y preguntar sobre su contenido.</>,
       <>Cada respuesta incluye la <strong>fuente</strong> de dónde sale la información.</>,
     ],
-    tip:<>El motor de IA ya está activo para todo el equipo: responde con IA completa a cualquier consulta, sin configurar nada.</>,
+    tip:<>En esta demo pública la IA está <strong>simulada</strong>: no envía tus consultas a ningún proveedor externo. El motor completo se activa en el despliegue del laboratorio.</>,
   },
   {
     ico:I.report, kicker:'Paso 4', title:'Informes con IA',
@@ -4907,9 +4907,14 @@ const OB_STEPS = [
 ];
 
 function Onboarding({ onClose, goTo }) {
+  const { user } = useAuth();
+  // El personal no ve Clientes ni Calidad (canOpenView), así que esos pasos
+  // se saltan aquí también — narrarlos llevaría a una pantalla bloqueada que
+  // en realidad no se abre para ese rol.
+  const steps = OB_STEPS.filter(s => canOpenView(user, s.view));
   const [i, setI] = useState(0);
-  const s = OB_STEPS[i];
-  const last = i === OB_STEPS.length-1;
+  const s = steps[i];
+  const last = i === steps.length-1;
   useEffect(()=>{ goTo(s.view); }, [i]);
   const next = () => last ? onClose() : setI(i+1);
   const back = () => setI(Math.max(0,i-1));
@@ -4932,7 +4937,7 @@ function Onboarding({ onClose, goTo }) {
             {s.tip && <div className="ob-tip"><span>{s.tip}</span></div>}
           </div>
           <div className="ob-foot">
-            <div className="ob-dots">{OB_STEPS.map((_,j)=><div key={j} className={`ob-dot${j===i?' on':''}`}></div>)}</div>
+            <div className="ob-dots">{steps.map((_,j)=><div key={j} className={`ob-dot${j===i?' on':''}`}></div>)}</div>
             <div className="ob-foot-btns">
               {i>0 && <button className="btn btn-ghost" onClick={back}>Atrás</button>}
               {!last && <button className="ob-skip" onClick={onClose}>Saltar guía</button>}
