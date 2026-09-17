@@ -1,5 +1,17 @@
 # Revisión de la demo de BCN Patòlegs
 
+## Actualización del 17 de septiembre de 2026
+
+Se conservan las mejoras de catálogos, búsqueda, ordenación y preformatos de las dos ramas previas. Se añade acceso de demostración para dirección/personal, gestión de cuentas ficticias, cierre de sesión, caducidad de interfaz y reutilización explícita de datos comunes en la siguiente recepción. Corregida la presentación de edad cero y sexo no indicado.
+
+La demo pública deja de enviar formularios a IA externa y deja de leer/escribir configuración clínica o de personal en localStorage. Muestras y ajustes se descartan al cerrar sesión; las cuentas de prueba al recargar. La guía y los indicadores reflejan la simulación. El Worker sigue desplegado de forma independiente y no se ha modificado en esta actualización.
+
+`npm test`: **22 pruebas correctas** de JSX, reglas, handlers y Worker simulado. Incluyen bloqueo de llamadas externas, credenciales de prueba, permisos de navegación y exclusión de datos personales en la plantilla de recepción. Las pruebas anteriores del frontend de IA externa se sustituyen por pruebas de que la demo no emite esas peticiones.
+
+En navegador local se verifican contraseña incorrecta, entrada de administrador, dos pacientes ficticios sucesivos con reutilización aceptada, opción de empezar en blanco, creación y desactivación de una cuenta ficticia, rechazo del acceso desactivado, cierre y entrada como recepción. El empleado carece de menús administrativos y ve su horario propio sin selector de otros empleados. Recargar devuelve a login; consola sin errores en el recorrido. Se inspecciona visualmente el login a 390 × 844. No se ha esperado 15 minutos para medir la caducidad en tiempo real ni probado el servidor físico.
+
+La autenticación definitiva, base de datos, validación clínica, recuperación y seguridad siguen pendientes. Véase [SEGURIDAD_DESPLIEGUE.md](SEGURIDAD_DESPLIEGUE.md). El registro que sigue describe la revisión anterior y debe leerse como histórico.
+
 Fecha: 14 de septiembre de 2026. Correcciones publicadas en GitHub Pages y Worker de Cloudflare actualizado (versión 9add8dae).
 
 Comprobación real del Worker: HTTP 200, origen CORS correcto y respuesta `OK` sin datos personales. Se detectó que el sondeo original de 3 tokens agotaba el límite antes de producir contenido; se amplió a 200 tokens y una petición explícita de respuesta breve.

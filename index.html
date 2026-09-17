@@ -822,6 +822,15 @@
     .print-area { position: absolute; top: 0; left: 0; width: 100%; padding: 12px; }
     .label-box { break-inside: avoid; }
   }
+  .login-page { height:100vh; overflow:auto; display:grid; place-items:safe center; padding:28px 16px; background:linear-gradient(140deg,#edf6f8,#f8fafc); }
+  .login-card { width:100%; max-width:460px; padding:34px; background:#fff; border:1px solid var(--border); border-radius:20px; box-shadow:0 16px 55px #254c6612; }
+  .login-card h1 { font-size:28px; margin:8px 0; }
+  .login-card form { margin-top:25px; }
+  .login-eyebrow { color:var(--brand-700); font-size:11px; font-weight:800; letter-spacing:1.8px; margin-top:15px; }
+  .login-notice { background:#edf5f8; padding:12px; border-radius:8px; font-size:12px; color:var(--text-2); line-height:1.55; margin-top:20px; }
+  .reuse-box { background:#edf6f8; border:1px solid #cfe1e9; border-radius:10px; padding:14px; }
+  .reuse-box p { font-size:12px; margin:8px 0; }
+  @media(max-width:480px) { .login-card {padding:24px;} }
 </style>
 </head>
 <body>
@@ -1012,6 +1021,7 @@ ADMIN_SEQ = { oferta:2, pedido:2, albaran:1, factura:2, proforma:1 };
 // Persistencia sencilla en localStorage, con guarda ante datos corruptos, inexistentes
 // o directamente inaccesibles (file://, modo incógnito, iframes con storage bloqueado...).
 function loadStored(key, fallback) {
+  if (PUBLIC_DEMO) return fallback;
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
@@ -1022,6 +1032,7 @@ function loadStored(key, fallback) {
   } catch (e) { return fallback; }
 }
 function saveStored(key, value) {
+  if (PUBLIC_DEMO) return;
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
 }
 function getStoredFlag(key) {
@@ -1271,7 +1282,7 @@ function simulateChatReply(q, samples) {
 function simulateReport(sample, spec, template, macro, micro) {
   return `DATOS DE LA MUESTRA
 Referencia: ${sample.id}
-Paciente: ${sample.patient}, ${sample.age} años, ${sample.sex==='M'?'mujer':'hombre'}
+Paciente: ${sample.patient}, ${sample.age} años, ${sample.sex==='M'?'mujer':sample.sex==='H'?'hombre':'sexo sin indicar'}
 Tipo de muestra: ${sample.type}
 Especialidad: ${spec}
 Orientación diagnóstica: ${template}
@@ -1309,6 +1320,7 @@ const aiAvailable = (apiKey) => (apiKey && apiKey.startsWith('gsk_')) || !!PROXY
 
 // Llama al modelo: usa la clave propia si existe; si no, el servidor compartido.
 async function aiComplete(apiKey, { messages, temperature=0.4, max_tokens=800 }) {
+  if (PUBLIC_DEMO) throw new Error('Demo local: no se envían datos de formularios a servicios de IA externos.');
   const ownKey = apiKey && apiKey.startsWith('gsk_');
   const url = ownKey ? 'https://api.groq.com/openai/v1/chat/completions' : PROXY_URL;
   if (!url) throw new Error('Sin motor de IA configurado');
@@ -1355,7 +1367,7 @@ const I18N = {
     'topbar.search':'Buscar muestra, paciente, referencia...',
     'topbar.guide':'Guía', 'topbar.guideTitle':'Ver guía de uso',
     'topbar.aiOn':'IA activa', 'topbar.aiOff':'Modo demostración',
-    'topbar.aiOnTitle':'Motor de IA respondiendo', 'topbar.aiOffTitle':'IA sin respuesta ahora mismo: mostrando modo demostración',
+    'topbar.aiOnTitle':'Motor de IA respondiendo', 'topbar.aiOffTitle':'IA simulada: los formularios no se envían a proveedores externos',
     'topbar.menu':'Abrir menú',
     'topbar.notifications':'Notificaciones', 'topbar.seeAllLog':'Ver registro completo →',
     'topbar.teamItem':'Equipo del laboratorio', 'topbar.settingsItem':'Configuración',
@@ -1509,8 +1521,106 @@ const docStatusLabel = (lang, status) => I18N[lang]?.[`docStatus.${status}`] ?? 
 const stateLabelT = (lang, state) => I18N[lang]?.[`states.${state}`] ?? I18N.es[`states.${state}`];
 
 /* ════════════════ ROOT ════════════════ */
+// Public demonstration only. Real authentication and authorization belong on the client's server.
+const PUBLIC_DEMO = true;
+const DEMO_PASSWORD = 'DemoBCN2026!';
+const DEMO_ACCOUNTS = [
+  { id:'boss', username:'admin', name:'Dirección del laboratorio', role:'admin', staffId:'mv', active:true },
+  { id:'marta', username:'marta', name:'Dra. Marta Vendrell', role:'employee', staffId:'mv', active:true },
+  { id:'reception', username:'recepcion', name:'Sonia Ferrer', role:'employee', staffId:'sf', active:true },
+];
+const AuthContext = React.createContext(null);
+const useAuth = () => useContext(AuthContext);
+const ADMIN_VIEWS = ['users','settings','admin','clients','quality'];
+const canOpenView = (user, view) => !!user && (user.role==='admin' || !ADMIN_VIEWS.includes(view));
+const authenticateDemo = (accounts, username, password) => {
+  if (password !== DEMO_PASSWORD) return null;
+  const account = accounts.find(a=>a.active && a.username===username.trim().toLowerCase());
+  return account ? {...account} : null;
+};
+// Whitelist: never retain patient identity, medical history, free-text findings or urgency in a batch template.
+const receptionDefaults = s => ({client:s.client, insurer:s.insurer||'', ref:s.ref||'', tipo:s.tipo||'B', pots:s.pots||1, spec:s.spec||''});
+const reuseReception = (form, previous, clients) => {
+  const center = clients.find(c=>c.id===previous?.client);
+  if (!previous || !center) return form;
+  return {...form, clientName:center.name, insurer:previous.insurer||'', ref:previous.ref||'', tipo:previous.tipo||'B', pots:previous.pots||1, spec:previous.spec||''};
+};
+
+function LoginScreen({accounts, onLogin, notice}) {
+  const [username,setUsername]=useState('');
+  const [password,setPassword]=useState('');
+  const [error,setError]=useState('');
+  const submit=e=>{
+    e.preventDefault();
+    const user=authenticateDemo(accounts,username,password);
+    if (!user) {setError('Usuario o contraseña incorrectos, o cuenta desactivada.');setPassword('');return;}
+    setPassword('');onLogin(user);
+  };
+  return <main className="login-page"><section className="login-card" aria-labelledby="login-title">
+    <img src={LOGO_SRC} alt="BCN Patòlegs" style={{width:62,height:62,objectFit:'contain'}}/>
+    <p className="login-eyebrow">BCN PATÒLEGS · LABAI</p>
+    <h1 id="login-title">Iniciar sesión</h1><p style={{color:'var(--text-2)'}}>Tu espacio de trabajo en el laboratorio.</p>
+    {notice && <p role="status" className="login-notice">{notice}</p>}
+    <form onSubmit={submit}>
+      <label className="field-label" htmlFor="login-user">Usuario de demostración</label>
+      <input id="login-user" className="field-input" autoComplete="off" autoCapitalize="none" spellCheck={false} value={username} onChange={e=>{setUsername(e.target.value);setError('');}} required/>
+      <label className="field-label" htmlFor="login-password" style={{marginTop:16}}>Contraseña de demostración</label>
+      <input id="login-password" className="field-input" type="password" autoComplete="off" value={password} onChange={e=>{setPassword(e.target.value);setError('');}} required/>
+      {error && <p role="alert" style={{color:'var(--red)',fontSize:13}}>{error}</p>}
+      <button className="btn btn-primary" style={{width:'100%',marginTop:20}} type="submit">Entrar</button>
+    </form>
+    <details style={{marginTop:24,fontSize:13}}><summary style={{cursor:'pointer',fontWeight:700}}>Cuentas para la presentación</summary>
+      <p>Contraseña común de prueba: <code>{DEMO_PASSWORD}</code></p>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{accounts.filter(a=>a.active).map(a=><button type="button" className="btn btn-soft btn-sm" key={a.id} onClick={()=>{setUsername(a.username);setPassword(DEMO_PASSWORD);setError('');}}>{a.username} · {a.role==='admin'?'Administrador':'Personal'}</button>)}</div>
+    </details>
+    <p className="login-notice">Demo pública con cuentas ficticias. No introduzcas contraseñas personales ni datos reales. El acceso definitivo se instalará en el servidor del laboratorio.</p>
+  </section></main>;
+}
+
+function DemoAccess() {
+  const [accounts,setAccounts]=useState(()=>DEMO_ACCOUNTS.map(a=>({...a})));
+  const [user,setUser]=useState(null);
+  const [notice,setNotice]=useState('');
+  const logout=useCallback((message='Sesión cerrada. Los datos de prueba de esta sesión se han descartado.')=>{setUser(null);setNotice(message);},[]);
+  useEffect(()=>{
+    if(!user)return;
+    let lastActivity=Date.now();
+    const expired=()=>Date.now()-lastActivity>=15*60*1000;
+    const activity=()=>{if(expired())logout('Sesión cerrada tras 15 minutos de inactividad.');else lastActivity=Date.now();};
+    const check=()=>{if(expired())logout('Sesión cerrada tras 15 minutos de inactividad.');};
+    ['pointerdown','keydown','scroll'].forEach(event=>window.addEventListener(event,activity,{passive:true}));
+    document.addEventListener('visibilitychange',check);
+    const timer=setInterval(check,15000);
+    return()=>{clearInterval(timer);['pointerdown','keydown','scroll'].forEach(event=>window.removeEventListener(event,activity));document.removeEventListener('visibilitychange',check);};
+  },[user,logout]);
+  if(!user)return <LoginScreen accounts={accounts} notice={notice} onLogin={u=>{setNotice('');setUser(u);}}/>;
+  return <AuthContext.Provider value={{user,accounts,setAccounts,logout}}><App key={user.id}/></AuthContext.Provider>;
+}
+
+function DemoUsers() {
+  const {user,accounts,setAccounts}=useAuth();
+  const [name,setName]=useState('');const [username,setUsername]=useState('');const [staffId,setStaffId]=useState('');const [error,setError]=useState('');
+  if(user.role!=='admin')return null;
+  const add=e=>{e.preventDefault();const clean=username.trim().toLowerCase();
+    if(!/^[a-z0-9._-]{3,32}$/.test(clean)||accounts.some(a=>a.username===clean)){setError('Usuario no válido o ya existente (3–32 letras, números, punto, guion).');return;}
+    if(!name.trim()||!DEFAULT_STAFF.some(s=>s.id===staffId)){setError('Completa nombre y empleado vinculado.');return;}
+    setAccounts(prev=>[...prev,{id:uid('account'),username:clean,name:name.trim(),role:'employee',staffId,active:true}]);setName('');setUsername('');setError('');
+  };
+  return <div><div className="page-head"><div><h1>Usuarios y acceso</h1><p>Dirección administra los accesos; cada persona entra con su usuario.</p></div></div>
+    <div className="card" style={{padding:20,marginBottom:20}}><h3>Cuentas de demostración</h3><p className="field-note">Solo para presentar el flujo. Contraseña común: {DEMO_PASSWORD}. Las cuentas nuevas duran hasta recargar esta página.</p>
+    {accounts.map(a=><div key={a.id} style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',padding:'12px 0',borderBottom:'1px solid var(--border)'}}><div style={{flex:1}}><strong>{a.name}</strong><div>{a.username} · {a.role==='admin'?'Administrador del laboratorio':'Personal'} · {a.active?'Activo':'Desactivado'}</div></div><button className="btn btn-ghost btn-sm" disabled={a.id===user.id} onClick={()=>setAccounts(prev=>prev.map(x=>x.id===a.id?{...x,active:!x.active}:x))}>{a.active?'Desactivar':'Activar'}</button></div>)}</div>
+    <form className="card" style={{padding:20}} onSubmit={add}><h3>Añadir usuario de prueba</h3>
+      <label className="field-label" htmlFor="account-name">Nombre ficticio</label><input id="account-name" className="field-input" value={name} onChange={e=>setName(e.target.value)} required/>
+      <label className="field-label" htmlFor="account-user">Usuario</label><input id="account-user" className="field-input" autoCapitalize="none" value={username} onChange={e=>setUsername(e.target.value)} required/>
+      <label className="field-label" htmlFor="account-staff">Empleado de demostración vinculado</label><select id="account-staff" className="field-input" value={staffId} onChange={e=>setStaffId(e.target.value)} required><option value="">Selecciona un empleado</option>{DEFAULT_STAFF.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
+      {error&&<p role="alert">{error}</p>}<button className="btn btn-primary" style={{marginTop:16}}>Crear usuario de prueba</button>
+    </form></div>;
+}
+
 function App() {
-  const [view, setView] = useState('dashboard');
+  const auth=useAuth();
+  const [view, setCurrentView] = useState('dashboard');
+  const setView = next => setCurrentView(canOpenView(auth.user,next)?next:'dashboard');
   const [lang, setLang] = useState(() => getStoredFlag('labai_lang') || 'es');
   useEffect(() => { setStoredFlag('labai_lang', lang); }, [lang]);
   const t = useCallback((key) => I18N[lang]?.[key] ?? I18N.es[key] ?? key, [lang]);
@@ -1554,7 +1664,7 @@ function App() {
   // "Fijar datos": recuerda centro/mútua/médico de la última muestra registrada
   // para precargarlos en la siguiente (mismo lote, mismo centro).
   const [lastReception, setLastReception] = useState(null);
-  const [pinReception, setPinReception] = useState(false);
+
   const [toast, setToast] = useState(null);
   const [search, setSearch] = useState('');
   // Filtros de muestras compartidos entre el buscador principal (topbar, visible
@@ -1578,13 +1688,14 @@ function App() {
 
   // "Realmente activa": comprobado en vivo contra el servidor compartido, no solo
   // "hay una URL configurada" — si ya se comprobó y falló, no mentimos.
-  const aiLive = aiStatus === 'ok' && aiAvailable(apiKey);
+  const aiLive = !PUBLIC_DEMO && aiStatus === 'ok' && aiAvailable(apiKey);
   const onAiResult = useCallback((ok) => setAiStatus(ok ? 'ok' : 'error'), []);
 
   // Comprobación de conectividad real al cargar, para que el indicador "IA activa"
   // no dependa solo de si hay una URL configurada.
   useEffect(() => {
     let cancelled = false;
+    if (PUBLIC_DEMO) return;
     (async () => {
       try {
         await aiComplete(apiKey, { messages: [{ role: 'user', content: 'Responde solo OK.' }], max_tokens: 200, temperature: 0 });
@@ -1604,7 +1715,7 @@ function App() {
 
   const addSample = (s) => {
     setSamples(prev => [s, ...prev]);
-    setLastReception({ client: s.client, insurer: s.insurer, ref: s.ref });
+    setLastReception(receptionDefaults(s));
     showToast(`Muestra ${s.caseCode} registrada correctamente`);
   };
   const markLabelsPrinted = (ids) => {
@@ -1737,6 +1848,7 @@ function App() {
     analyze:   [t('nav.analyze')],
     team:      [t('nav.team')],
     settings:  [t('nav.settings')],
+    users:     ['Usuarios y acceso'],
   };
   const fullHeight = view==='chat' || view==='reports';
 
@@ -1751,10 +1863,10 @@ function App() {
                 sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters}
                 onToggleNav={() => setMobileNavOpen(v => !v)} />
         <div className="content">
-          <p style={{fontSize:12,color:'var(--text-2)',margin:'0 0 12px'}}>Demo · Usa solo datos ficticios. Las muestras y documentos se reinician al recargar; la configuración se guarda en este navegador.</p>
+          <p style={{fontSize:12,color:'var(--text-2)',margin:'0 0 12px'}}>Demo · Solo datos ficticios. Datos y ajustes duran durante la sesión. IA simulada, sin envío de formularios a proveedores externos.</p>
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} macroTemplates={macroTemplates} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} macroTemplates={macroTemplates} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} search={search} setSearch={setSearch} sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
             {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
@@ -1764,6 +1876,7 @@ function App() {
             {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={openAdminFor} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
             {view === 'team'      && <Team specialties={specialties} />}
+            {view === 'users' && auth.user.role==='admin' && <DemoUsers/>}
             {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} techniques={techniques} addTechnique={addTechnique} removeTechnique={removeTechnique} materials={materials} macroTemplates={macroTemplates} setMacroTemplate={setMacroTemplate} removeMacroTemplate={removeMacroTemplate} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setMacroTemplates(DEFAULT_MACRO_TEMPLATES); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setAdminDocs(INITIAL_ADMIN_DOCS); ADMIN_SEQ={oferta:2,pedido:2,albaran:1,factura:2,proforma:1}; setStaff(DEFAULT_STAFF); setShifts(DEFAULT_SHIFTS); setStaffRequests([]); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
@@ -1779,6 +1892,7 @@ function App() {
 /* ════════════════ SIDEBAR ════════════════ */
 function Sidebar({ view, setView, samples, adminDocs=[], staffRequests=[], mobileOpen, onCloseMobile }) {
   const { t } = useT();
+  const auth=useAuth();
   const urgent = samples.filter(s => s.urgent && s.state !== 'validado').length;
   const validated = samples.filter(s => s.state === 'validado').length;
   const pendingDocs = adminDocs.filter(d => ['enviada','pendiente','borrador'].includes(d.status)).length;
@@ -1801,6 +1915,7 @@ function Sidebar({ view, setView, samples, adminDocs=[], staffRequests=[], mobil
       { id:'quality', ico:I.quality, label:t('nav.quality') },
       { id:'team', ico:I.team, label:t('nav.team') },
       { id:'settings', ico:I.settings, label:t('nav.settings') },
+      { id:'users', ico:I.team, label:'Usuarios y acceso' },
     ]},
   ];
 
@@ -1819,7 +1934,7 @@ function Sidebar({ view, setView, samples, adminDocs=[], staffRequests=[], mobil
           {nav.map(g => (
             <div className="nav-group" key={g.group}>
               <div className="nav-label">{g.group}</div>
-              {g.items.map(it => (
+              {g.items.filter(it=>canOpenView(auth.user,it.id)).map(it => (
                 <button key={it.id} className={`nav-item${view===it.id?' active':''}`} onClick={()=>{ setView(it.id); onCloseMobile && onCloseMobile(); }}>
                   <span className="nav-ico">{it.ico}</span>
                   {it.label}
@@ -1842,6 +1957,8 @@ function Sidebar({ view, setView, samples, adminDocs=[], staffRequests=[], mobil
 
 /* ════════════════ TOPBAR ════════════════ */
 function Topbar({ title, aiLive, onGuide, samples, clients, insurers, specialties, search, setSearch, onSubmitSearch, onNavigate, sampleFilters, patchSampleFilters, clearSampleFilters, onToggleNav }) {
+  const auth=useAuth();
+  const initials=auth.user.name.split(' ').filter(Boolean).slice(0,2).map(n=>n[0]).join('');
   const { t, lang, setLang } = useT();
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
@@ -1966,21 +2083,22 @@ function Topbar({ title, aiLive, onGuide, samples, clients, insurers, specialtie
         </div>
         <div style={{position:'relative'}}>
           <button className="user-chip" onClick={()=>{setUserOpen(o=>!o); setNotifOpen(false);}} style={{background:'transparent',border:'none'}}>
-            <div className="user-av">MV</div>
+            <div className="user-av">{initials}</div>
             <div className="user-meta" style={{textAlign:'left'}}>
-              <div className="user-name">Dra. M. Vendrell</div>
-              <div className="user-role">Patóloga · Admin</div>
+              <div className="user-name">{auth.user.name}</div>
+              <div className="user-role">{auth.user.role==='admin'?'Administrador':'Personal'} · Demo</div>
             </div>
           </button>
           {userOpen && <Portal><div className="pop-backdrop" onClick={()=>setUserOpen(false)}/></Portal>}
           {userOpen && (
             <div className="popover" style={{width:230}}>
               <div className="pop-userhead">
-                <div className="user-av" style={{width:42,height:42,fontSize:15}}>MV</div>
-                <div><div style={{fontWeight:700,fontSize:13.5}}>Dra. Marta Vendrell</div><div style={{fontSize:11.5,color:'var(--text-3)'}}>marta.vendrell@bcnpatolegs.com</div></div>
+                <div className="user-av" style={{width:42,height:42,fontSize:15}}>{initials}</div>
+                <div><div style={{fontWeight:700,fontSize:13.5}}>{auth.user.name}</div><div style={{fontSize:11.5,color:'var(--text-3)'}}>{auth.user.username} · Cuenta de prueba</div></div>
               </div>
               <button className="pop-item" onClick={()=>{setUserOpen(false); onNavigate('team');}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)'}}>{I.team}</span><span className="pop-t">{t('topbar.teamItem')}</span></button>
-              <button className="pop-item" onClick={()=>{setUserOpen(false); onNavigate('settings');}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)'}}>{I.settings}</span><span className="pop-t">{t('topbar.settingsItem')}</span></button>
+              {auth.user.role==='admin' && <button className="pop-item" onClick={()=>{setUserOpen(false); onNavigate('users');}}><span className="pop-t">Usuarios y acceso</span></button>}
+              <button className="pop-item" onClick={()=>auth.logout()}><span className="pop-t">Cerrar sesión</span></button>
               <button className="pop-item" onClick={()=>{setUserOpen(false); onGuide();}}><span className="pop-ico" style={{background:'var(--brand-50)',color:'var(--brand-700)',fontWeight:800}}>?</span><span className="pop-t">{t('topbar.guideTitle')}</span></button>
             </div>
           )}
@@ -1992,6 +2110,7 @@ function Topbar({ title, aiLive, onGuide, samples, clients, insurers, specialtie
 
 /* ════════════════ DASHBOARD ════════════════ */
 function Dashboard({ samples, specialties, setView, onNewSample }) {
+  const auth=useAuth();
   const { t } = useT();
   const total = samples.length;
   const urgent = samples.filter(s=>s.urgent && s.state!=='validado').length;
@@ -2023,11 +2142,11 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
     <div>
       <div className="page-head">
         <div>
-          <h1>{t('dash.greeting')}</h1>
+          <h1>{t('nav.dashboard')}</h1>
           <p>{t('dash.youHave')} <strong>{urgent} {urgent!==1?t('dash.urgentPendingPl'):t('dash.urgentPendingSg')}</strong> · {inProc} {t('dash.samplesInProgress')}</p>
         </div>
         <div className="page-head-actions">
-          <button className="btn btn-ghost" onClick={()=>setView('quality')}>{t('dash.auditBtn')}</button>
+          {auth.user.role==='admin' && <button className="btn btn-ghost" onClick={()=>setView('quality')}>{t('dash.auditBtn')}</button>}
           <button className="btn btn-primary" onClick={onNewSample}>{I.plus} {t('dash.newSample')}</button>
         </div>
       </div>
@@ -2123,7 +2242,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, macroTemplates, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, sampleFilters, patchSampleFilters, clearSampleFilters, pendingNew, clearPendingNew, onOpenReport, onOpenAdmin }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, macroTemplates, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, search, setSearch, sampleFilters, patchSampleFilters, clearSampleFilters, pendingNew, clearPendingNew, onOpenReport, onOpenAdmin }) {
   const { t, lang } = useT();
   const [mode, setMode] = useState('kanban');
   const [selected, setSelected] = useState(null);
@@ -2278,7 +2397,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
                           {s.urgent && <span className="scard-urgent">URGENTE</span>}
                         </div>
                         <div className="scard-name">{s.type}</div>
-                        <div className="scard-patient">{GL.user} {s.patient}{s.age?` · ${s.age}a`:''}</div>
+                        <div className="scard-patient">{GL.user} {s.patient}{s.age!=null?` · ${s.age}a`:''}</div>
                         <div className="scard-client">{clientById(clients, s.client)?.name || s.ref}</div>
                         <div className="scard-foot">
                           <span className="tipo-tag" title={TIPOS[s.tipo]?.label}>{s.tipo}</span>
@@ -2318,7 +2437,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
                       <td><span className="mono">{s.caseCode}</span>{s.urgent && <span className="scard-urgent" style={{marginLeft:8}}>URG</span>}</td>
                       <td><span className="tipo-tag" title={TIPOS[s.tipo]?.label}>{s.tipo}</span></td>
                       <td style={{fontWeight:600,maxWidth:230}}>{s.type}{s.pots>1?<span style={{color:'var(--text-3)',fontWeight:500}}> · {s.pots} botes</span>:null}</td>
-                      <td>{s.patient} <span style={{color:'var(--text-3)'}}>· {s.age?`${s.age}a `:''}{s.sex}</span></td>
+                      <td>{s.patient} <span style={{color:'var(--text-3)'}}>· {s.age!=null?`${s.age}a `:''}{s.sex}</span></td>
                       <td style={{color:'var(--text-2)'}}>{clientById(clients, s.client)?.name || s.ref}</td>
                       <td><span className="spec-pill" style={{background:bg,color:fg}} title={s.spec}>{specShort(specialties, s.spec)}</span></td>
                       <td><span className="status-pill" style={{background:sbg,color:sfg}}><span className="sp-dot" style={{background:sfg}}></span>{stateLabelT(lang,s.state)}</span></td>
@@ -2337,7 +2456,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
       )}
 
       {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} macroTemplates={macroTemplates} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={onOpenAdmin} setSelected={setSelected} onOpenReport={onOpenReport} />}
-      {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} />}
+      {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} />}
       {showLabels && <LabelsModal candidates={pendingLabels} onClose={()=>setShowLabels(false)} markPrinted={markLabelsPrinted} />}
       {showSelectionLabels && <LabelsModal candidates={selectedSamples} onClose={()=>setShowSelectionLabels(false)} markPrinted={markLabelsPrinted} />}
     </div>
@@ -2461,7 +2580,7 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
 
           <div className="detail-grid" style={{marginTop:18}}>
             <div className="detail-item"><div className="di-label">Paciente</div><div className="di-val">{s.patient}</div></div>
-            <div className="detail-item"><div className="di-label">Edad / Sexo</div><div className="di-val">{s.age ? `${s.age} años` : <span style={{color:'var(--text-3)',fontStyle:'italic'}}>Sin edad</span>} · {s.sex==='M'?'Mujer':'Hombre'}</div></div>
+            <div className="detail-item"><div className="di-label">Edad / Sexo</div><div className="di-val">{s.age != null ? `${s.age} años` : <span style={{color:'var(--text-3)',fontStyle:'italic'}}>Sin edad</span>} · {s.sex==='M'?'Mujer':s.sex==='H'?'Hombre':'Sin indicar'}</div></div>
             <div className="detail-item"><div className="di-label">Nº historia clínica</div><div className="di-val">{s.historyNumber || <span style={{color:'var(--text-3)',fontStyle:'italic'}}>—</span>}</div></div>
             <div className="detail-item"><div className="di-label">Fecha de nacimiento</div><div className="di-val">{s.birthDate || <span style={{color:'var(--text-3)',fontStyle:'italic'}}>—</span>}</div></div>
             <div className="detail-item"><div className="di-label">Centro médico</div><div className="di-val">{client?.name || s.ref}{client && client.discount>0 && <span style={{color:'var(--text-3)',fontWeight:500}}> · dto. {client.discount}%</span>}{s.centerRefNumber && <span style={{color:'var(--text-3)',fontWeight:500}}> · ref. centro: {s.centerRefNumber}</span>}</div></div>
@@ -2599,17 +2718,17 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
   );
 }
 
-function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, lastReception, pinReception, setPinReception }) {
-  const pinned = pinReception && lastReception;
-  const pinnedClientName = pinned ? (clientById(clients, lastReception.client)?.name || '') : '';
+function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, lastReception }) {
   const [f, setF] = useState({
-    type:'', patient:'', age:'', sex:'M', historyNumber:'', birthDate:'',
-    clientName: pinned ? pinnedClientName : (clients[0]?.name||''),
+    type:'', patient:'', age:'', sex:'', historyNumber:'', birthDate:'',
+    clientName: '',
     centerRefNumber:'',
-    insurer: pinned ? (lastReception.insurer||'') : '',
-    ref: pinned ? (lastReception.ref||'') : '',
+    insurer: '',
+    ref: '',
     tipo:'B', pots:1, spec:Object.keys(specialties)[0]||'', urgent:false,
   });
+  const [reuseChoice,setReuseChoice]=useState(null);
+  const previousClient=clients.find(c=>c.id===lastReception?.client);
   const set = (k,v) => setF(p=>({...p,[k]:v}));
   // Único requisito real: saber de quién es la muestra. Todo lo demás se puede
   // completar luego — "meto 50 muestras de golpe" no puede depender de tenerlo
@@ -2632,7 +2751,7 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
     // Cliente, especialidad, mútua y médico son campos abiertos: si lo escrito no
     // existe todavía en el laboratorio, se da de alta aquí mismo con este registro.
     let clientId = matchedClient?.id;
-    if (!clientId) {
+    if (!clientId && f.clientName.trim()) {
       clientId = uid('cli');
       addClient({ id: clientId, name: f.clientName.trim(), type:'Cliente', discount:0, rate:{ B:100, C:60, P:75 } });
     }
@@ -2647,7 +2766,7 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
       age: f.age ? Number(f.age) : null, sex:f.sex,
       historyNumber:f.historyNumber.trim(), birthDate:f.birthDate||null,
       centerRefNumber:f.centerRefNumber.trim(),
-      insurer:f.insurer.trim(), ref:f.ref.trim()||matchedClient?.name||f.clientName.trim(), spec:specName, tech: PATHOLOGISTS.find(p=>p.spec===specName)?.name || 'Por asignar',
+      insurer:f.insurer.trim(), ref:f.ref.trim(), spec:specName, tech: PATHOLOGISTS.find(p=>p.spec===specName)?.name || 'Por asignar',
       // Recepción es un lote aparte: en cuanto se registra, la muestra ya está
       // lista para el siguiente paso (Inclusión) en otro puesto — nadie tiene
       // que "avanzarla" a mano desde Recepción.
@@ -2677,13 +2796,12 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
           </div>
 
           <div className="new-sample-grid">
-            <div className="field full" style={{marginBottom:pinned?0:undefined}}>
-              <label style={{display:'flex',alignItems:'center',gap:8,cursor: lastReception ? 'pointer' : 'default',fontSize:12.5,color:'var(--text-2)',marginBottom:10}}>
-                <input type="checkbox" checked={pinReception} disabled={!lastReception} onChange={e=>setPinReception(e.target.checked)} style={{width:14,height:14}}/>
-                Usar el mismo centro, mútua y médico que en la última muestra registrada
-                {!lastReception && <span style={{color:'var(--text-3)'}}> (todavía no hay ninguna en esta sesión)</span>}
-              </label>
-            </div>
+            {lastReception && previousClient && <div className="field full reuse-box">
+              <strong>¿Usar los datos de la última recepción?</strong>
+              <p>{previousClient.name} · {lastReception.insurer||'Sin mútua'} · {lastReception.ref||'Sin médico'}</p>
+              <p className="field-note">También se recuperan tipo, especialidad y número de botes. Identificación del paciente, descripción y prioridad se completan de nuevo.</p>
+              {reuseChoice===null ? <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button type="button" className="btn btn-soft btn-sm" onClick={()=>{setF(current=>reuseReception(current,lastReception,clients));setReuseChoice('used');}}>Sí, usar los mismos datos</button><button type="button" className="btn btn-ghost btn-sm" onClick={()=>setReuseChoice('blank')}>No, empezar en blanco</button></div> : <p role="status">{reuseChoice==='used'?'Datos de recepción aplicados. Puedes modificarlos.':'Nueva recepción sin copiar datos.'}</p>}
+            </div>}
 
             <div className="field full">
               <label className="field-label">Centro médico / cliente</label>
@@ -2757,7 +2875,7 @@ function NewSampleModal({ onClose, onAdd, clients, addClient, specialties, addSp
             <div className="field" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               <div><label className="field-label">Edad (opcional)</label><input className="field-input" type="number" placeholder="55" value={f.age} onChange={e=>set('age',e.target.value)}/></div>
               <div><label className="field-label">Sexo</label>
-                <select className="field-input" value={f.sex} onChange={e=>set('sex',e.target.value)}><option value="M">Mujer</option><option value="H">Hombre</option></select>
+                <select className="field-input" value={f.sex} onChange={e=>set('sex',e.target.value)}><option value="">Sin indicar</option><option value="M">Mujer</option><option value="H">Hombre</option></select>
               </div>
             </div>
 
@@ -3082,7 +3200,7 @@ COMENTARIO / RECOMENDACIONES
 Datos:
 - Laboratorio: BCN Patòlegs (Barcelona)
 - Referencia: ${sample.id}
-- Paciente: ${sample.patient}, ${sample.age} años, ${sample.sex==='M'?'mujer':'hombre'}
+- Paciente: ${sample.patient}, ${sample.age} años, ${sample.sex==='M'?'mujer':sample.sex==='H'?'hombre':'sexo sin indicar'}
 - Tipo de muestra: ${sample.type}
 - Especialidad: ${spec}
 - Orientación diagnóstica (plantilla): ${template}
@@ -4422,12 +4540,13 @@ function RequestsEmployee({ viewingStaff, staffRequests, addStaffRequest }) {
 }
 
 function Personal({ staff, addStaffMember, updateStaffMember, deleteStaffMember, shifts, setShift, removeShift, staffRequests, addStaffRequest, decideStaffRequest, showToast }) {
-  const [role, setRole] = useState('admin'); // 'admin' | 'employee' — simula "entrar como", no hay login real
+  const auth=useAuth();
+  const [role, setRole] = useState(auth.user.role==='admin'?'admin':'employee');
   const [viewingStaffId, setViewingStaffId] = useState(staff[0]?.id || null);
   const [tab, setTab] = useState('schedule'); // 'schedule' | 'requests'
   const [staffModal, setStaffModal] = useState(null); // null | 'new' | objeto empleado
 
-  const viewingStaff = staff.find(s=>s.id===viewingStaffId) || staff[0] || null;
+  const viewingStaff = auth.user.role==='admin' ? (staff.find(s=>s.id===viewingStaffId) || staff[0] || null) : (staff.find(s=>s.id===auth.user.staffId) || null);
   const pendingCount = staffRequests.filter(r=>r.status==='pendiente').length;
 
   return (
@@ -4439,13 +4558,13 @@ function Personal({ staff, addStaffMember, updateStaffMember, deleteStaffMember,
         </div>
         <div className="page-head-actions">
           <div className="seg">
-            <button className={role==='admin'?'on':''} onClick={()=>setRole('admin')}>Vista administrador</button>
+            {auth.user.role==='admin' && <button className={role==='admin'?'on':''} onClick={()=>setRole('admin')}>Vista administrador</button>}
             <button className={role==='employee'?'on':''} onClick={()=>setRole('employee')}>Vista empleado</button>
           </div>
         </div>
       </div>
 
-      {role==='employee' && (
+      {role==='employee' && auth.user.role==='admin' && (
         <div className="card" style={{marginBottom:16,padding:'10px 16px',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
           <span style={{fontSize:12.5,color:'var(--text-2)'}}>Viendo como:</span>
           <select className="field-input" style={{maxWidth:260}} value={viewingStaffId||''} onChange={e=>setViewingStaffId(e.target.value)}>
@@ -4611,10 +4730,10 @@ function Settings({ aiLive, specialties, addSpecialty, techniques=[], addTechniq
               <div className="set-desc">
                 {aiLive
                   ? 'El servicio externo de IA responde. Esta demo usa un proxy de Cloudflare y el proveedor Groq.'
-                  : 'El servidor de IA no responde ahora mismo. Mostrando respuestas de demostración mientras tanto.'}
+                  : 'IA simulada en esta demo. Los formularios no se envían al proveedor externo. La integración definitiva se decidirá con el laboratorio.'}
               </div>
             </div>
-            <span className="audit-tag" style={{background: aiLive?'var(--green-bg)':'var(--amber-bg)', color: aiLive?'var(--green)':'var(--amber)'}}>{aiLive ? '● Activa' : '● Sin respuesta'}</span>
+            <span className="audit-tag" style={{background: aiLive?'var(--green-bg)':'var(--amber-bg)', color: aiLive?'var(--green)':'var(--amber)'}}>{aiLive ? '● Activa' : '● Demo local'}</span>
           </div>
         </div>
 
@@ -4622,7 +4741,7 @@ function Settings({ aiLive, specialties, addSpecialty, techniques=[], addTechniq
           <div className="card-head"><h3>Datos del laboratorio</h3></div>
           <div className="set-row"><div className="set-info"><div className="set-title">Centro</div><div className="set-desc">BCN Patòlegs · Laboratori d'Anatomia Patològica</div></div></div>
           <div className="set-row"><div className="set-info"><div className="set-title">Dirección</div><div className="set-desc">Pg. de Josep Llovera, 9 · 08021 Barcelona</div></div></div>
-          <div className="set-row"><div className="set-info"><div className="set-title">Alojamiento de datos</div><div className="set-desc">Datos en memoria y configuración en este navegador. Sin servidor de datos conectado.</div></div><span className="audit-tag">Demo</span></div>
+          <div className="set-row"><div className="set-info"><div className="set-title">Alojamiento de datos</div><div className="set-desc">Datos y ajustes en memoria durante la sesión. Sin servidor de datos conectado.</div></div><span className="audit-tag">Demo</span></div>
         </div>
 
         <div className="card">
@@ -4701,7 +4820,7 @@ const OB_STEPS = [
     lead:<>Esto es <strong>LabAI</strong>, el sistema de gestión de laboratorio de <strong>BCN Patòlegs</strong>. Une la trazabilidad completa de muestras con un asistente de inteligencia artificial que entiende de anatomía patológica.</>,
     steps:[
       <>A la <strong>izquierda</strong> tienes el menú: Panel, Muestras, Informes, Clientes y Calidad.</>,
-      <>Arriba a la derecha está tu perfil y el indicador de <strong>IA activa</strong>: el motor de inteligencia artificial ya está conectado para todo el equipo, sin nada que configurar.</>,
+      <>Arriba a la derecha está tu perfil para cerrar sesión. La <strong>IA está simulada</strong> en la demo pública; no envía el contenido de los formularios a proveedores externos.</>,
       <>Puedes probarlo <strong>tal cual</strong>: nada de lo que hagas aquí es real.</>,
     ],
     tip:<>Esta guía te llevará por cada sección. Pulsa <strong>Siguiente</strong> para empezar.</>,
@@ -4826,7 +4945,7 @@ function Onboarding({ onClose, goTo }) {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+ReactDOM.createRoot(document.getElementById('root')).render(<DemoAccess/>);
 </script>
 </body>
 </html>

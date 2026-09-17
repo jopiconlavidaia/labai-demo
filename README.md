@@ -1,6 +1,14 @@
 # LabAI · Demo BCN Patòlegs
 
-Interfaz de demostración de gestión de laboratorio. Usar datos ficticios. Las muestras y documentos viven en memoria de la pestaña; la configuración usa almacenamiento local del navegador.
+Interfaz de demostración de gestión de laboratorio. Usar exclusivamente datos ficticios. Las muestras, documentos y ajustes viven en memoria y se descartan al cerrar sesión o recargar. Solo el idioma y la preferencia de la guía se guardan en el navegador. Las cuentas de prueba creadas se conservan hasta recargar la pestaña.
+
+## Acceso y recepción (17/09/2026)
+
+Usuarios de prueba: `admin`, `marta` y `recepcion`. Contraseña pública común: `DemoBCN2026!`. El administrador puede crear y desactivar cuentas de prueba. El personal no ve las vistas de administración. Hay cierre de sesión y caducidad de interfaz tras 15 minutos sin actividad. **Es una simulación de acceso, no autenticación segura**: no protege datos reales ni sustituye permisos en el servidor.
+
+Después de registrar una muestra con centro, la siguiente recepción ofrece recuperar centro, mútua, médico, tipo, especialidad y número de botes. Requiere aceptar; no copia nombre, edad, sexo, historia, nacimiento, referencia propia de la muestra, descripción ni prioridad.
+
+La demo pública usa IA simulada y bloquea las llamadas de sus formularios al proveedor externo. El Worker anterior sigue siendo un componente independiente: este cambio no lo elimina ni transforma en backend clínico. Véase [SEGURIDAD_DESPLIEGUE.md](SEGURIDAD_DESPLIEGUE.md) antes de planificar datos reales.
 
 ## Desarrollo local
 
