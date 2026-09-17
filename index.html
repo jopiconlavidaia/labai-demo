@@ -951,7 +951,7 @@ const DEFAULT_DOCTORS = ['Dr. Pujol', 'Dr. Sànchez'];
 // aspecto…), igual que describían del sistema real. Técnicas: lista abierta,
 // "rutina" (H&E) es la que se usa en la inmensa mayoría de los casos.
 const DEFAULT_MATERIALS = ['Fragmento de piel', 'Biopsia endoscópica', 'Pieza quirúrgica', 'Citología', 'Punción con aguja fina'];
-const MACRO_TEMPLATES = {
+const DEFAULT_MACRO_TEMPLATES = {
   'Fragmento de piel': 'Fragmento de piel de [medidas] cm, con lesión [descripción]. Se tinta el borde quirúrgico y se incluye totalidad.',
   'Biopsia endoscópica': '[nº] fragmentos de mucosa de [medidas] mm, de coloración [descripción]. Se incluye totalidad.',
   'Pieza quirúrgica': 'Pieza quirúrgica de [medidas] cm, con [descripción de superficie y bordes]. Cortes seriados.',
@@ -1525,6 +1525,10 @@ function App() {
   const [insurers, setInsurers] = useState(() => loadStored('labai_insurers', DEFAULT_INSURERS));
   const [doctors, setDoctors] = useState(() => loadStored('labai_doctors', DEFAULT_DOCTORS));
   const [materials, setMaterials] = useState(() => loadStored('labai_materials', DEFAULT_MATERIALS));
+  // Preformatos de macroscopia por tipo de material — "los podríamos hacer antes":
+  // se preparan con calma desde Configuración y se autorrellenan al elegir el
+  // material en Inclusión, en vez de estar fijos en el código.
+  const [macroTemplates, setMacroTemplates] = useState(() => loadStored('labai_macro_templates', DEFAULT_MACRO_TEMPLATES));
   const [techniques, setTechniques] = useState(() => loadStored('labai_techniques', DEFAULT_TECHNIQUES));
   const [diagnosisCodes, setDiagnosisCodes] = useState(() => loadStored('labai_diagnosis_codes', DEFAULT_DIAGNOSIS_CODES));
   // Administración (ofertas/pedidos/albaranes/facturas/proformas): como las muestras,
@@ -1541,6 +1545,7 @@ function App() {
   useEffect(() => { saveStored('labai_insurers', insurers); }, [insurers]);
   useEffect(() => { saveStored('labai_doctors', doctors); }, [doctors]);
   useEffect(() => { saveStored('labai_materials', materials); }, [materials]);
+  useEffect(() => { saveStored('labai_macro_templates', macroTemplates); }, [macroTemplates]);
   useEffect(() => { saveStored('labai_techniques', techniques); }, [techniques]);
   useEffect(() => { saveStored('labai_diagnosis_codes', diagnosisCodes); }, [diagnosisCodes]);
   useEffect(() => { saveStored('labai_staff', staff); }, [staff]);
@@ -1619,6 +1624,15 @@ function App() {
     const clean = name.trim();
     if (!clean || materials.includes(clean)) return;
     setMaterials(prev => [...prev, clean]);
+  };
+  const setMacroTemplate = (material, text) => {
+    const clean = material.trim();
+    if (!clean) return;
+    addMaterial(clean);
+    setMacroTemplates(prev => ({ ...prev, [clean]: text }));
+  };
+  const removeMacroTemplate = (material) => {
+    setMacroTemplates(prev => { const next = { ...prev }; delete next[material]; return next; });
   };
   const addTechnique = (name) => {
     const clean = name.trim();
@@ -1740,7 +1754,7 @@ function App() {
           <p style={{fontSize:12,color:'var(--text-2)',margin:'0 0 12px'}}>Demo · Usa solo datos ficticios. Las muestras y documentos se reinician al recargar; la configuración se guarda en este navegador.</p>
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
-            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
+            {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} macroTemplates={macroTemplates} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} search={search} setSearch={setSearch} sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
             {view === 'chat'      && <Chat apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} />}
             {view === 'reports'   && <Reports apiKey={apiKey} aiLive={aiLive} onAiResult={onAiResult} samples={samples} specialties={specialties} showToast={showToast} initialSampleId={reportSampleId} />}
             {view === 'quality'   && <Quality samples={samples} showToast={showToast} />}
@@ -1750,7 +1764,7 @@ function App() {
             {view === 'archive'   && <Archive samples={samples} updateState={updateSampleState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={openAdminFor} onOpenReport={openReportFor} />}
             {view === 'analyze'   && <Analyze />}
             {view === 'team'      && <Team specialties={specialties} />}
-            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} techniques={techniques} addTechnique={addTechnique} removeTechnique={removeTechnique} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setAdminDocs(INITIAL_ADMIN_DOCS); ADMIN_SEQ={oferta:2,pedido:2,albaran:1,factura:2,proforma:1}; setStaff(DEFAULT_STAFF); setShifts(DEFAULT_SHIFTS); setStaffRequests([]); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
+            {view === 'settings'  && <Settings aiLive={aiLive} specialties={specialties} addSpecialty={addSpecialty} techniques={techniques} addTechnique={addTechnique} removeTechnique={removeTechnique} materials={materials} macroTemplates={macroTemplates} setMacroTemplate={setMacroTemplate} removeMacroTemplate={removeMacroTemplate} onShowGuide={() => setShowGuide(true)} onReset={()=>{setSamples(INITIAL_SAMPLES); setSpecialties(DEFAULT_SPECIALTIES); setClients(DEFAULT_CLIENTS); setInsurers(DEFAULT_INSURERS); setDoctors(DEFAULT_DOCTORS); setMaterials(DEFAULT_MATERIALS); setMacroTemplates(DEFAULT_MACRO_TEMPLATES); setTechniques(DEFAULT_TECHNIQUES); setDiagnosisCodes(DEFAULT_DIAGNOSIS_CODES); setAdminDocs(INITIAL_ADMIN_DOCS); ADMIN_SEQ={oferta:2,pedido:2,albaran:1,factura:2,proforma:1}; setStaff(DEFAULT_STAFF); setShifts(DEFAULT_SHIFTS); setStaffRequests([]); setLastReception(null); setPinReception(false); SID=926; CASE_SEQ=131; showToast('Datos de demostración restablecidos');}} showToast={showToast} />}
           </div>
         </div>
       </div>
@@ -2109,7 +2123,7 @@ function Dashboard({ samples, specialties, setView, onNewSample }) {
 }
 
 /* ════════════════ SAMPLES ════════════════ */
-function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, sampleFilters, patchSampleFilters, clearSampleFilters, pendingNew, clearPendingNew, onOpenReport, onOpenAdmin }) {
+function Samples({ samples, addSample, updateState, updateSample, clients, addClient, specialties, addSpecialty, insurers, addInsurer, doctors, addDoctor, materials, addMaterial, macroTemplates, techniques, addTechnique, diagnosisCodes, addDiagnosisCode, markLabelsPrinted, lastReception, pinReception, setPinReception, search, setSearch, sampleFilters, patchSampleFilters, clearSampleFilters, pendingNew, clearPendingNew, onOpenReport, onOpenAdmin }) {
   const { t, lang } = useT();
   const [mode, setMode] = useState('kanban');
   const [selected, setSelected] = useState(null);
@@ -2322,7 +2336,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
         <div className="card"><div className="empty"><div className="empty-ico">{I.search}</div><h3>{t('samples.emptyTitle')}</h3><p>{t('samples.emptyDesc')}</p>{q && <button className="btn btn-soft" style={{marginTop:14}} onClick={()=>setSearch('')}>{t('samples.clearSearch')}</button>}</div></div>
       )}
 
-      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={onOpenAdmin} setSelected={setSelected} onOpenReport={onOpenReport} />}
+      {selected && <SampleDrawer sample={samples.find(x=>x.id===selected.id)||selected} onClose={()=>setSelected(null)} updateState={updateState} updateSample={updateSample} clients={clients} specialties={specialties} materials={materials} addMaterial={addMaterial} macroTemplates={macroTemplates} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} onOpenAdmin={onOpenAdmin} setSelected={setSelected} onOpenReport={onOpenReport} />}
       {showNew && <NewSampleModal onClose={()=>setShowNew(false)} onAdd={(s)=>{addSample(s); setShowNew(false);}} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} lastReception={lastReception} pinReception={pinReception} setPinReception={setPinReception} />}
       {showLabels && <LabelsModal candidates={pendingLabels} onClose={()=>setShowLabels(false)} markPrinted={markLabelsPrinted} />}
       {showSelectionLabels && <LabelsModal candidates={selectedSamples} onClose={()=>setShowSelectionLabels(false)} markPrinted={markLabelsPrinted} />}
@@ -2330,7 +2344,7 @@ function Samples({ samples, addSample, updateState, updateSample, clients, addCl
   );
 }
 
-function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, techniques=[], addTechnique=()=>{}, diagnosisCodes={}, addDiagnosisCode=()=>{}, markLabelsPrinted=null, onOpenAdmin=null, setSelected, onOpenReport }) {
+function SampleDrawer({ sample, onClose, updateState, updateSample, clients, specialties, materials=[], addMaterial=()=>{}, macroTemplates={}, techniques=[], addTechnique=()=>{}, diagnosisCodes={}, addDiagnosisCode=()=>{}, markLabelsPrinted=null, onOpenAdmin=null, setSelected, onOpenReport }) {
   const { lang } = useT();
   const [printLabels, setPrintLabels] = useState(null); // array de etiquetas a imprimir ya, o null
   const s = sample;
@@ -2366,7 +2380,7 @@ function SampleDrawer({ sample, onClose, updateState, updateSample, clients, spe
 
   const applyTemplate = (mat) => {
     setMaterial(mat);
-    if (!desc.trim() && MACRO_TEMPLATES[mat]) setDesc(MACRO_TEMPLATES[mat]);
+    if (!desc.trim() && macroTemplates[mat]) setDesc(macroTemplates[mat]);
   };
 
   const saveInclusion = () => {
@@ -4512,7 +4526,51 @@ function Team({ specialties }) {
 }
 
 /* ════════════════ CONFIGURACIÓN ════════════════ */
-function Settings({ aiLive, specialties, addSpecialty, techniques=[], addTechnique=()=>{}, removeTechnique=()=>{}, onShowGuide, onReset, showToast }) {
+// Preformatos de macroscopia: "los podríamos hacer antes" — se preparan con
+// calma desde Configuración, en vez de escribirlos sobre la marcha durante
+// la Inclusión de cada muestra.
+function MacroTemplateManager({ materials, macroTemplates, setMacroTemplate, removeMacroTemplate, showToast }) {
+  const [drafts, setDrafts] = useState({});
+  const [newMat, setNewMat] = useState('');
+  const [newText, setNewText] = useState('');
+  const allMats = [...new Set([...materials, ...Object.keys(macroTemplates)])];
+  const getDraft = (mat) => drafts[mat] !== undefined ? drafts[mat] : (macroTemplates[mat] || '');
+  const save = (mat) => {
+    setMacroTemplate(mat, getDraft(mat).trim());
+    setDrafts(prev => { const next = {...prev}; delete next[mat]; return next; });
+  };
+  const addNew = () => {
+    const mat = newMat.trim();
+    if (!mat) return;
+    setMacroTemplate(mat, newText.trim());
+    setNewMat(''); setNewText('');
+    showToast && showToast(`Preformato de «${mat}» guardado`);
+  };
+  return (
+    <div className="card" style={{gridColumn:'1 / -1'}}>
+      <div className="card-head"><h3>Preformatos de macroscopia</h3></div>
+      <div style={{padding:'14px 18px',display:'flex',flexDirection:'column',gap:14}}>
+        <div className="field-note" style={{margin:0}}>Descripción macroscópica que se autorrellena al elegir el tipo de material en Inclusión — prepáralos con calma, no hace falta escribirlos sobre la marcha.</div>
+        {allMats.map(mat => (
+          <div key={mat} style={{display:'flex',flexDirection:'column',gap:6,paddingBottom:12,borderBottom:'1px solid var(--line)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <strong style={{fontSize:13}}>{mat}</strong>
+              {macroTemplates[mat] && <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>removeMacroTemplate(mat)}>Quitar preformato</button>}
+            </div>
+            <textarea className="field-input" rows={2} placeholder="Sin preformato — se escribirá a mano cada vez." value={getDraft(mat)} onChange={e=>setDrafts(prev=>({...prev,[mat]:e.target.value}))} onBlur={()=>save(mat)}/>
+          </div>
+        ))}
+        {allMats.length===0 && <div style={{fontSize:12.5,color:'var(--text-3)'}}>Sin tipos de material todavía.</div>}
+        <div className="section-title" style={{marginTop:0}}>Nuevo tipo de material</div>
+        <input className="field-input" placeholder="p. ej. Legrado endometrial" value={newMat} onChange={e=>setNewMat(e.target.value)}/>
+        <textarea className="field-input" rows={2} placeholder="Preformato de descripción macroscópica (opcional)" value={newText} onChange={e=>setNewText(e.target.value)}/>
+        <button className="btn btn-soft btn-sm" onClick={addNew} disabled={!newMat.trim()} style={{alignSelf:'flex-start'}}>Añadir</button>
+      </div>
+    </div>
+  );
+}
+
+function Settings({ aiLive, specialties, addSpecialty, techniques=[], addTechnique=()=>{}, removeTechnique=()=>{}, materials=[], macroTemplates={}, setMacroTemplate=()=>{}, removeMacroTemplate=()=>{}, onShowGuide, onReset, showToast }) {
   const [newSpec, setNewSpec] = useState('');
   const addNewSpec = () => {
     const name = newSpec.trim();
@@ -4584,6 +4642,8 @@ function Settings({ aiLive, specialties, addSpecialty, techniques=[], addTechniq
             <div className="field-note">También puedes añadir una especialidad nueva directamente al registrar una muestra, en Recepción.</div>
           </div>
         </div>
+
+        <MacroTemplateManager materials={materials} macroTemplates={macroTemplates} setMacroTemplate={setMacroTemplate} removeMacroTemplate={removeMacroTemplate} showToast={showToast} />
 
         <div className="card">
           <div className="card-head"><h3>Técnicas</h3></div>
