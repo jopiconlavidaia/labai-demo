@@ -1,3 +1,5 @@
+Actualización 19/09/2026: a petición del usuario, la demo vuelve a conectar con Groq a través del Worker de Cloudflare. Solo datos ficticios: el contenido enviado a IA sale del navegador hacia esos servicios. Se mantienen login de demostración y datos en memoria; esto no habilita uso clínico. Las referencias posteriores a IA bloqueada describen el estado del 17/09, sustituido por esta actualización.
+
 # LabAI · Demo BCN Patòlegs
 
 Interfaz de demostración de gestión de laboratorio. Usar exclusivamente datos ficticios. Las muestras, documentos y ajustes viven en memoria y se descartan al cerrar sesión o recargar. Solo el idioma y la preferencia de la guía se guardan en el navegador. Las cuentas de prueba creadas se conservan hasta recargar la pestaña.

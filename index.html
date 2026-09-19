@@ -1320,7 +1320,7 @@ const aiAvailable = (apiKey) => (apiKey && apiKey.startsWith('gsk_')) || !!PROXY
 
 // Llama al modelo: usa la clave propia si existe; si no, el servidor compartido.
 async function aiComplete(apiKey, { messages, temperature=0.4, max_tokens=800 }) {
-  if (PUBLIC_DEMO) throw new Error('Demo local: no se envían datos de formularios a servicios de IA externos.');
+
   const ownKey = apiKey && apiKey.startsWith('gsk_');
   const url = ownKey ? 'https://api.groq.com/openai/v1/chat/completions' : PROXY_URL;
   if (!url) throw new Error('Sin motor de IA configurado');
@@ -1367,7 +1367,7 @@ const I18N = {
     'topbar.search':'Buscar muestra, paciente, referencia...',
     'topbar.guide':'Guía', 'topbar.guideTitle':'Ver guía de uso',
     'topbar.aiOn':'IA activa', 'topbar.aiOff':'Modo demostración',
-    'topbar.aiOnTitle':'Motor de IA respondiendo', 'topbar.aiOffTitle':'IA simulada: los formularios no se envían a proveedores externos',
+    'topbar.aiOnTitle':'Motor de IA respondiendo', 'topbar.aiOffTitle':'Conexión de IA pendiente o no disponible; respuestas simuladas',
     'topbar.menu':'Abrir menú',
     'topbar.notifications':'Notificaciones', 'topbar.seeAllLog':'Ver registro completo →',
     'topbar.teamItem':'Equipo del laboratorio', 'topbar.settingsItem':'Configuración',
@@ -1688,14 +1688,14 @@ function App() {
 
   // "Realmente activa": comprobado en vivo contra el servidor compartido, no solo
   // "hay una URL configurada" — si ya se comprobó y falló, no mentimos.
-  const aiLive = !PUBLIC_DEMO && aiStatus === 'ok' && aiAvailable(apiKey);
+  const aiLive = aiStatus === 'ok' && aiAvailable(apiKey);
   const onAiResult = useCallback((ok) => setAiStatus(ok ? 'ok' : 'error'), []);
 
   // Comprobación de conectividad real al cargar, para que el indicador "IA activa"
   // no dependa solo de si hay una URL configurada.
   useEffect(() => {
     let cancelled = false;
-    if (PUBLIC_DEMO) return;
+
     (async () => {
       try {
         await aiComplete(apiKey, { messages: [{ role: 'user', content: 'Responde solo OK.' }], max_tokens: 200, temperature: 0 });
@@ -1863,7 +1863,7 @@ function App() {
                 sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters}
                 onToggleNav={() => setMobileNavOpen(v => !v)} />
         <div className="content">
-          <p style={{fontSize:12,color:'var(--text-2)',margin:'0 0 12px'}}>Demo · Solo datos ficticios. Datos y ajustes duran durante la sesión. IA simulada, sin envío de formularios a proveedores externos.</p>
+          <p style={{fontSize:12,color:'var(--text-2)',margin:'0 0 12px'}}>Demo · Solo datos ficticios. Datos y ajustes duran durante la sesión. La IA envía el texto a Groq mediante Cloudflare; no introduzcas datos reales.</p>
           <div className="content-narrow" style={{height: fullHeight ? '100%' : 'auto'}}>
             {view === 'dashboard' && <Dashboard samples={samples} specialties={specialties} setView={setView} onNewSample={goNewSample} />}
             {view === 'samples'   && <Samples samples={samples} addSample={addSample} updateState={updateSampleState} updateSample={updateSample} clients={clients} addClient={addClient} specialties={specialties} addSpecialty={addSpecialty} insurers={insurers} addInsurer={addInsurer} doctors={doctors} addDoctor={addDoctor} materials={materials} addMaterial={addMaterial} macroTemplates={macroTemplates} techniques={techniques} addTechnique={addTechnique} diagnosisCodes={diagnosisCodes} addDiagnosisCode={addDiagnosisCode} markLabelsPrinted={markLabelsPrinted} lastReception={lastReception} search={search} setSearch={setSearch} sampleFilters={sampleFilters} patchSampleFilters={patchSampleFilters} clearSampleFilters={clearSampleFilters} pendingNew={pendingNewSample} clearPendingNew={()=>setPendingNewSample(false)} onOpenReport={openReportFor} onOpenAdmin={openAdminFor} />}
@@ -4730,7 +4730,7 @@ function Settings({ aiLive, specialties, addSpecialty, techniques=[], addTechniq
               <div className="set-desc">
                 {aiLive
                   ? 'El servicio externo de IA responde. Esta demo usa un proxy de Cloudflare y el proveedor Groq.'
-                  : 'IA simulada en esta demo. Los formularios no se envían al proveedor externo. La integración definitiva se decidirá con el laboratorio.'}
+                  : 'Conexión de IA pendiente o no disponible. Las respuestas simuladas se identifican como demostración.'}
               </div>
             </div>
             <span className="audit-tag" style={{background: aiLive?'var(--green-bg)':'var(--amber-bg)', color: aiLive?'var(--green)':'var(--amber)'}}>{aiLive ? '● Activa' : '● Demo local'}</span>
@@ -4820,7 +4820,7 @@ const OB_STEPS = [
     lead:<>Esto es <strong>LabAI</strong>, el sistema de gestión de laboratorio de <strong>BCN Patòlegs</strong>. Une la trazabilidad completa de muestras con un asistente de inteligencia artificial que entiende de anatomía patológica.</>,
     steps:[
       <>A la <strong>izquierda</strong> tienes el menú: Panel, Muestras, Informes y Archivo — más opciones de gestión según tu rol.</>,
-      <>Arriba a la derecha está tu perfil para cerrar sesión. La <strong>IA está simulada</strong> en la demo pública; no envía el contenido de los formularios a proveedores externos.</>,
+      <>Arriba a la derecha está tu perfil para cerrar sesión. La <strong>IA usa Groq mediante Cloudflare</strong>. Usa solo datos ficticios. El indicador confirma si el servicio responde.</>,
       <>Puedes probarlo <strong>tal cual</strong>: nada de lo que hagas aquí es real.</>,
     ],
     tip:<>Esta guía te llevará por cada sección. Pulsa <strong>Siguiente</strong> para empezar.</>,

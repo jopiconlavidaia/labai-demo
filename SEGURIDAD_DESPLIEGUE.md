@@ -1,3 +1,5 @@
+Actualización 19/09/2026: a petición del usuario, la demo vuelve a conectar con Groq a través del Worker de Cloudflare. Solo datos ficticios: el contenido enviado a IA sale del navegador hacia esos servicios. Se mantienen login de demostración y datos en memoria; esto no habilita uso clínico. Las referencias posteriores a IA bloqueada describen el estado del 17/09, sustituido por esta actualización.
+
 # Separación entre demo y sistema del laboratorio
 
 Revisión del 17/09/2026. El cliente dispone de un servidor físico en sus instalaciones; todavía no hay acceso ni especificaciones. Este documento define el trabajo pendiente, no certifica la aplicación ni declara listo un despliegue clínico.
